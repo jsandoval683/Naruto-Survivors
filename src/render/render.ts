@@ -1,12 +1,10 @@
 import { Input } from '../core/input';
-import { FINAL_TIME, type Game } from '../game/game';
-import { ArenaWeapon, ClonesWeapon, JUTSUS, SellosWeapon } from '../game/jutsus';
+import { FINAL_TIME } from '../game/game';
 import { LOOKS } from '../game/looks';
 import { NATURE_COLOR } from '../game/natures';
-import { PASSIVES } from '../game/passives';
 import type { SceneId } from '../game/timeline';
 import { BOSSES, type BossId } from '../game/bosses';
-import type { Enemy, Field, Hazard, Pickup, Projectile } from '../game/types';
+import type { EnemyView, FieldView, HazardView, HeroView, PickupView, ProjectileView, SceneView, SlotView } from '../game/view';
 import { drawLook, minionSprite } from './sprites';
 
 export interface View {
@@ -125,7 +123,7 @@ export function drawGround(ctx: CanvasRenderingContext2D, cx: number, cy: number
   }
 }
 
-function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, t: number, playerX: number): void {
+function drawEnemy(ctx: CanvasRenderingContext2D, e: EnemyView, t: number, playerX: number): void {
   const white = e.flash > 0;
   if (e.boss) {
     // Nature ring under the boss.
@@ -158,7 +156,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, t: number, playerX: 
   }
 }
 
-function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, t: number): void {
+function drawProjectile(ctx: CanvasRenderingContext2D, p: ProjectileView, t: number): void {
   if (p.kind === 'kunai') {
     ctx.save();
     ctx.translate(p.x, p.y);
@@ -222,7 +220,7 @@ function drawProjectile(ctx: CanvasRenderingContext2D, p: Projectile, t: number)
   }
 }
 
-function drawField(ctx: CanvasRenderingContext2D, f: Field, t: number): void {
+function drawField(ctx: CanvasRenderingContext2D, f: FieldView, t: number): void {
   ctx.save();
   ctx.globalAlpha = Math.min(1, f.life * 3) * 0.75;
   if (f.style === 'shuriken') {
@@ -266,7 +264,7 @@ function drawField(ctx: CanvasRenderingContext2D, f: Field, t: number): void {
   ctx.restore();
 }
 
-function drawHazard(ctx: CanvasRenderingContext2D, h: Hazard): void {
+function drawHazard(ctx: CanvasRenderingContext2D, h: HazardView): void {
   if (h.kind === 'bullet') {
     ctx.fillStyle = h.color;
     ctx.strokeStyle = 'rgba(0,0,0,0.6)';
@@ -299,7 +297,7 @@ function drawHazard(ctx: CanvasRenderingContext2D, h: Hazard): void {
   }
 }
 
-function drawPickup(ctx: CanvasRenderingContext2D, pk: Pickup, t: number): void {
+function drawPickup(ctx: CanvasRenderingContext2D, pk: PickupView, t: number): void {
   const bob = Math.sin(t * 4 + pk.x) * 1.5;
   const x = pk.x;
   const y = pk.y + bob;
@@ -424,98 +422,118 @@ function drawPickup(ctx: CanvasRenderingContext2D, pk: Pickup, t: number): void 
 
 // ---------------- frame ----------------
 
-export function render(ctx: CanvasRenderingContext2D, g: Game, view: View, input: Input): void {
+function drawHero(ctx: CanvasRenderingContext2D, h: HeroView, t: number, isLocal: boolean, coop: boolean): void {
+  const look = LOOKS[h.lookId] ?? LOOKS.naruto;
+  if (h.downed) {
+    // Downed: lying grey sprite and a revive ring that fills while a teammate stands close.
+    drawLook(ctx, look, h.x, h.y, h.r, h.facingX < 0, 0, 0.45, true);
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, 45, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = '#5cc96b';
+    ctx.beginPath();
+    ctx.arc(h.x, h.y, 45, -Math.PI / 2, -Math.PI / 2 + h.revive * Math.PI * 2);
+    ctx.stroke();
+    ctx.font = 'bold 10px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(`${h.name} · ¡Revíveme!`, h.x, h.y - 30);
+    return;
+  }
+  for (const c of h.clones) drawLook(ctx, look, c.x, c.y, 11, c.facingLeft, Math.sin(c.anim * 14) * 1.2, 0.75);
+
+  if (h.aura) {
+    const pulse = 1 + Math.sin(t * 8) * 0.08;
+    const grad = ctx.createRadialGradient(h.x, h.y - 4, 4, h.x, h.y - 4, h.r * 2.4 * pulse);
+    grad.addColorStop(0, h.aura + 'aa');
+    grad.addColorStop(1, h.aura + '00');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(h.x, h.y - 4, h.r * 2.4 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (h.pillTime > 0) {
+    ctx.strokeStyle = `rgba(229,83,75,${0.5 + Math.sin(t * 12) * 0.3})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(h.x, h.y - 2, h.r * 1.6, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  const blink = h.invuln > 0 && Math.floor(t * 20) % 2 === 0;
+  drawLook(ctx, look, h.x, h.y, h.r, h.facingX < 0, h.moving ? Math.sin(h.anim * 14) * 1.5 : 0, blink ? 0.4 : 1);
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(h.x - 14, h.y + 17, 28, 4);
+  ctx.fillStyle = isLocal ? '#5cc96b' : '#4fb3ff';
+  ctx.fillRect(h.x - 14, h.y + 17, 28 * Math.max(0, h.hp / h.maxHp), 4);
+  if (coop && !isLocal) {
+    ctx.font = 'bold 9px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#000';
+    ctx.fillText(h.name, h.x + 1, h.y - 27);
+    ctx.fillStyle = '#bfe8ff';
+    ctx.fillText(h.name, h.x, h.y - 28);
+  }
+  for (const o of h.orbs) {
+    ctx.fillStyle = '#d8b26a';
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#efd49a';
+    ctx.beginPath();
+    ctx.arc(o.x - o.r * 0.3, o.y - o.r * 0.3, o.r * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+export function render(ctx: CanvasRenderingContext2D, g: SceneView, view: View, input: Input): void {
   const { dpr, zoom } = view;
   const s = dpr * zoom;
-  const p = g.player;
+  const me = g.heroes[g.localIndex];
+  const coop = g.heroes.length > 1;
   const ww = view.w / zoom;
   const wh = view.h / zoom;
   const W = ctx.canvas.width;
   const H = ctx.canvas.height;
 
-  ctx.setTransform(s, 0, 0, s, W / 2 - p.x * s, H / 2 - p.y * s);
-  drawGround(ctx, p.x, p.y, ww, wh, g.scene);
+  ctx.setTransform(s, 0, 0, s, W / 2 - me.x * s, H / 2 - me.y * s);
+  drawGround(ctx, me.x, me.y, ww, wh, g.scene);
 
   for (const h of g.hazards) if (h.kind === 'zone') drawHazard(ctx, h);
   for (const f of g.fields) drawField(ctx, f, g.t);
   for (const pk of g.pickups) drawPickup(ctx, pk, g.t);
 
-  for (const w of g.weapons) {
-    if (w instanceof SellosWeapon) {
-      for (const t of w.tags) {
-        ctx.fillStyle = '#efe3c2';
-        ctx.fillRect(t.x - 5, t.y - 8, 10, 16);
-        ctx.fillStyle = '#c0392b';
-        ctx.fillRect(t.x - 1, t.y - 6, 2, 12);
-        if (t.arm <= 0 && Math.floor(g.t * 6) % 2 === 0) {
-          ctx.fillStyle = '#ff3b1f';
-          ctx.beginPath();
-          ctx.arc(t.x, t.y - 10, 2, 0, Math.PI * 2);
-          ctx.fill();
-        }
+  for (const h of g.heroes) {
+    for (const t of h.tags) {
+      ctx.fillStyle = '#efe3c2';
+      ctx.fillRect(t.x - 5, t.y - 8, 10, 16);
+      ctx.fillStyle = '#c0392b';
+      ctx.fillRect(t.x - 1, t.y - 6, 2, 12);
+      if (t.arm <= 0 && Math.floor(g.t * 6) % 2 === 0) {
+        ctx.fillStyle = '#ff3b1f';
+        ctx.beginPath();
+        ctx.arc(t.x, t.y - 10, 2, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
   }
 
   // Cull to the visible area plus a margin.
-  const left = p.x - ww / 2 - 60;
-  const right = p.x + ww / 2 + 60;
-  const top = p.y - wh / 2 - 60;
-  const bottom = p.y + wh / 2 + 60;
+  const left = me.x - ww / 2 - 60;
+  const right = me.x + ww / 2 + 60;
+  const top = me.y - wh / 2 - 60;
+  const bottom = me.y + wh / 2 + 60;
   for (const e of g.enemies) {
     if (e.x < left || e.x > right || e.y < top || e.y > bottom) continue;
-    drawEnemy(ctx, e, g.t, p.x);
+    drawEnemy(ctx, e, g.t, me.x);
   }
 
-  const look = LOOKS[g.lookId] ?? LOOKS[g.char.id];
-  for (const w of g.weapons) {
-    if (w instanceof ClonesWeapon) {
-      for (const c of w.clones) drawLook(ctx, look, c.x, c.y, 11, c.facingLeft, Math.sin(c.anim * 14) * 1.2, 0.75);
-    }
-  }
-
-  // Transformation aura
-  const form = g.transform;
-  if (form) {
-    const pulse = 1 + Math.sin(g.t * 8) * 0.08;
-    const grad = ctx.createRadialGradient(p.x, p.y - 4, 4, p.x, p.y - 4, p.r * 2.4 * pulse);
-    grad.addColorStop(0, form.aura + 'aa');
-    grad.addColorStop(1, form.aura + '00');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y - 4, p.r * 2.4 * pulse, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  if (g.pillTime > 0) {
-    ctx.strokeStyle = `rgba(229,83,75,${0.5 + Math.sin(g.t * 12) * 0.3})`;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y - 2, p.r * 1.6, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-
-  const blink = p.invuln > 0 && Math.floor(g.t * 20) % 2 === 0;
-  drawLook(ctx, look, p.x, p.y, p.r, p.facingX < 0, p.moving ? Math.sin(p.anim * 14) * 1.5 : 0, blink ? 0.4 : 1);
-  ctx.fillStyle = 'rgba(0,0,0,0.6)';
-  ctx.fillRect(p.x - 14, p.y + 17, 28, 4);
-  ctx.fillStyle = '#5cc96b';
-  ctx.fillRect(p.x - 14, p.y + 17, 28 * Math.max(0, p.hp / g.stats.maxHp), 4);
-
-  for (const w of g.weapons) {
-    if (w instanceof ArenaWeapon) {
-      for (const o of w.orbs) {
-        ctx.fillStyle = '#d8b26a';
-        ctx.beginPath();
-        ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#efd49a';
-        ctx.beginPath();
-        ctx.arc(o.x - o.r * 0.3, o.y - o.r * 0.3, o.r * 0.4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-  }
+  // Teammates first, the local hero on top.
+  g.heroes.forEach((h, i) => {
+    if (i !== g.localIndex) drawHero(ctx, h, g.t, false, coop);
+  });
+  drawHero(ctx, me, g.t, true, coop);
 
   for (const pr of g.projectiles) drawProjectile(ctx, pr, g.t);
   for (const h of g.hazards) if (h.kind === 'bullet') drawHazard(ctx, h);
@@ -564,7 +582,7 @@ export function render(ctx: CanvasRenderingContext2D, g: Game, view: View, input
   ctx.textAlign = 'center';
   for (const tx of g.texts) {
     ctx.font = tx.big ? 'bold 13px system-ui, sans-serif' : 'bold 10px system-ui, sans-serif';
-    ctx.globalAlpha = Math.min(1, tx.life * 3);
+    ctx.globalAlpha = Math.max(0, Math.min(1, tx.life * 3));
     ctx.fillStyle = '#000';
     ctx.fillText(tx.text, tx.x + 1, tx.y + 1);
     ctx.fillStyle = tx.color;
@@ -577,10 +595,10 @@ export function render(ctx: CanvasRenderingContext2D, g: Game, view: View, input
 
 // ---------------- HUD (screen space, CSS pixels) ----------------
 
-function drawBossBars(ctx: CanvasRenderingContext2D, g: Game, W: number, top: number): void {
-  const bosses = g.enemies.filter((e) => e.boss && !e.dead);
+function drawBossBars(ctx: CanvasRenderingContext2D, g: SceneView, W: number, top: number): void {
+  const bosses = g.enemies.filter((e) => e.boss);
   if (!bosses.length) {
-    const next = g.director.nextBoss(g.t);
+    const next = g.nextBoss;
     if (next) {
       const name = next.ids.length > 1 ? (next.ids[0].startsWith('path') ? 'Los Seis Caminos' : 'Jefes') : BOSSES[next.ids[0] as BossId].name;
       ctx.font = '11px system-ui, sans-serif';
@@ -625,16 +643,19 @@ function drawBossBars(ctx: CanvasRenderingContext2D, g: Game, W: number, top: nu
   }
 }
 
-function drawEdgeArrows(ctx: CanvasRenderingContext2D, g: Game, view: View): void {
-  const p = g.player;
+function drawEdgeArrows(ctx: CanvasRenderingContext2D, g: SceneView, view: View): void {
+  const p = g.heroes[g.localIndex];
   const hw = view.w / 2;
   const hh = view.h / 2;
   const targets: { x: number; y: number; color: string }[] = [];
-  for (const e of g.enemies) if (e.boss && !e.dead) targets.push({ x: e.x, y: e.y, color: '#ff3b3b' });
+  for (const e of g.enemies) if (e.boss) targets.push({ x: e.x, y: e.y, color: '#ff3b3b' });
   for (const pk of g.pickups) {
     if (pk.kind === 'biju') targets.push({ x: pk.x, y: pk.y, color: '#ff8a3c' });
     else if (pk.kind === 'tenten') targets.push({ x: pk.x, y: pk.y, color: '#5cc96b' });
   }
+  g.heroes.forEach((h, i) => {
+    if (i !== g.localIndex) targets.push({ x: h.x, y: h.y, color: h.downed ? '#ffffff' : '#4fb3ff' });
+  });
   for (const e of targets) {
     const sx = (e.x - p.x) * view.zoom;
     const sy = (e.y - p.y) * view.zoom;
@@ -657,10 +678,11 @@ function drawEdgeArrows(ctx: CanvasRenderingContext2D, g: Game, view: View): voi
   }
 }
 
-function drawHud(ctx: CanvasRenderingContext2D, g: Game, view: View, input: Input): void {
+function drawHud(ctx: CanvasRenderingContext2D, g: SceneView, view: View, input: Input): void {
   ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
   const W = view.w;
   const H = view.h;
+  const me = g.heroes[g.localIndex];
 
   if (g.tint) {
     const k = g.tint.life / g.tint.max;
@@ -672,9 +694,17 @@ function drawHud(ctx: CanvasRenderingContext2D, g: Game, view: View, input: Inpu
     ctx.fillStyle = `rgba(${fx.color},${0.6 * (fx.life / fx.max)})`;
     ctx.fillRect(0, 0, W, H);
   }
-  if (g.hurtFlash > 0) {
-    ctx.fillStyle = `rgba(200,0,0,${g.hurtFlash})`;
+  if (me.hurtFlash > 0) {
+    ctx.fillStyle = `rgba(200,0,0,${me.hurtFlash})`;
     ctx.fillRect(0, 0, W, H);
+  }
+  if (me.downed) {
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 20px system-ui, sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.fillText('Has caído: un compañero puede revivirte', W / 2, H * 0.62);
   }
 
   // XP bar
@@ -688,42 +718,58 @@ function drawHud(ctx: CanvasRenderingContext2D, g: Game, view: View, input: Inpu
   ctx.beginPath();
   ctx.roundRect(10, 18, 190, 60, 8);
   ctx.fill();
-  ctx.fillStyle = g.transform ? g.transform.aura : '#ffd23f';
+  ctx.fillStyle = me.aura ?? '#ffd23f';
   ctx.font = 'bold 13px system-ui, sans-serif';
   ctx.textAlign = 'left';
-  ctx.fillText(g.char.name, 20, 36);
+  ctx.fillText(me.charName, 20, 36);
   ctx.fillStyle = '#c9d1d9';
   ctx.textAlign = 'right';
   ctx.fillText(`Nv. ${g.level}`, 190, 36);
   ctx.fillStyle = '#3a1010';
   ctx.fillRect(20, 44, 170, 9);
-  ctx.fillStyle = g.player.slow > 0 ? '#b48cff' : '#e5534b';
-  ctx.fillRect(20, 44, 170 * Math.max(0, g.player.hp / g.stats.maxHp), 9);
+  ctx.fillStyle = me.slow > 0 ? '#b48cff' : '#e5534b';
+  ctx.fillRect(20, 44, 170 * Math.max(0, me.hp / me.maxHp), 9);
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 9px system-ui, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText(`${Math.ceil(g.player.hp)} / ${g.stats.maxHp}`, 105, 52);
+  ctx.fillText(`${Math.ceil(me.hp)} / ${me.maxHp}`, 105, 52);
   for (let i = 0; i < 9; i++) {
     ctx.fillStyle = i < g.biju ? '#ff8a3c' : 'rgba(255,255,255,0.18)';
     ctx.beginPath();
     ctx.arc(20 + i * 11, 70, 4, 0, Math.PI * 2);
     ctx.fill();
   }
-  if (g.pillTime > 0) {
+  if (me.pillTime > 0) {
     ctx.font = 'bold 10px system-ui, sans-serif';
     ctx.textAlign = 'left';
     ctx.fillStyle = '#e5534b';
-    ctx.fillText(`Píldora ${Math.ceil(g.pillTime)} s`, 122, 74);
+    ctx.fillText(`Píldora ${Math.ceil(me.pillTime)} s`, 122, 74);
   }
-  if (g.transform) {
+  let panelBottom = 78;
+  if (me.formName) {
     ctx.font = 'bold 10px system-ui, sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillStyle = g.transform.aura;
-    ctx.fillText(g.transform.name, 14, 90);
+    ctx.fillStyle = me.aura!;
+    ctx.fillText(me.formName, 14, 90);
+    panelBottom = 94;
   }
+  // Teammates
+  g.heroes.forEach((h, i) => {
+    if (i === g.localIndex) return;
+    const y = panelBottom + 6;
+    panelBottom += 16;
+    ctx.fillStyle = 'rgba(10,14,28,0.7)';
+    ctx.fillRect(10, y, 150, 13);
+    ctx.fillStyle = h.downed ? '#777' : '#4fb3ff';
+    ctx.fillRect(12, y + 9, 146 * Math.max(0, h.hp / h.maxHp), 2);
+    ctx.font = 'bold 9px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = h.downed ? '#ff8a8a' : '#e6edf5';
+    ctx.fillText(`${h.name} · ${h.charName}${h.downed ? ' (caído)' : ''}`, 14, y + 8);
+  });
 
   // Timer + arc (pushed below the player panel on narrow portrait screens)
-  const top = W < 560 ? 76 : 0;
+  const top = W < 560 ? panelBottom - 2 : 0;
   ctx.textAlign = 'center';
   ctx.font = 'bold 24px system-ui, sans-serif';
   ctx.fillStyle = '#000';
@@ -740,7 +786,7 @@ function drawHud(ctx: CanvasRenderingContext2D, g: Game, view: View, input: Inpu
   // Banner
   if (g.banner) {
     ctx.textAlign = 'center';
-    ctx.globalAlpha = Math.min(1, g.banner.life * 2);
+    ctx.globalAlpha = Math.max(0, Math.min(1, g.banner.life * 2));
     ctx.font = 'bold 24px system-ui, sans-serif';
     const by = H * 0.3;
     ctx.fillStyle = '#000';
@@ -760,10 +806,7 @@ function drawHud(ctx: CanvasRenderingContext2D, g: Game, view: View, input: Inpu
   // Jutsu + passive slots
   const size = 40;
   const gap = 6;
-  type Slot = { icon: string; color: string; level: number; max: number; evolved?: boolean };
-  const slots: Slot[] = g.weapons.map((w) => ({ icon: JUTSUS[w.id].icon, color: w.evolved ? '#ffd23f' : JUTSUS[w.id].color, level: w.level, max: 5, evolved: w.evolved }));
-  const pas: Slot[] = [...g.passives.entries()].map(([id, l]) => ({ icon: PASSIVES[id].icon, color: PASSIVES[id].color, level: l, max: 5 }));
-  const drawRow = (items: Slot[], y: number, sz: number) => {
+  const drawRow = (items: SlotView[], y: number, sz: number) => {
     const total = items.length * sz + (items.length - 1) * gap;
     let x = W / 2 - total / 2;
     for (const it of items) {
@@ -778,15 +821,15 @@ function drawHud(ctx: CanvasRenderingContext2D, g: Game, view: View, input: Inpu
       ctx.font = `bold ${Math.round(sz * 0.5)}px system-ui, sans-serif`;
       ctx.textAlign = 'center';
       ctx.fillText(it.icon, x + sz / 2, y + sz * 0.62);
-      for (let i = 0; i < it.max; i++) {
+      for (let i = 0; i < 5; i++) {
         ctx.fillStyle = i < it.level ? '#ffd23f' : 'rgba(255,255,255,0.2)';
-        ctx.fillRect(x + 4 + i * ((sz - 8) / it.max), y + sz - 6, (sz - 8) / it.max - 1.5, 3);
+        ctx.fillRect(x + 4 + i * ((sz - 8) / 5), y + sz - 6, (sz - 8) / 5 - 1.5, 3);
       }
       x += sz + gap;
     }
   };
-  drawRow(slots, H - size - 12, size);
-  if (pas.length) drawRow(pas, H - size - 12 - 34, 28);
+  drawRow(me.slots, H - size - 12, size);
+  if (me.passives.length) drawRow(me.passives, H - size - 12 - 34, 28);
 
   // Touch joystick
   if (input.touch) {

@@ -1,16 +1,18 @@
 import { SpatialHash } from '../core/spatialHash';
-import type { Input } from '../core/input';
 import { BOSSES, type BossId } from './bosses';
-import { CHARACTERS, type CharacterDef, type CharacterId, type StatMods, type Transform } from './characters';
+import type { CharacterDef, CharacterId, StatMods, Transform } from './characters';
 import { ENEMIES, type MinionKind } from './enemies';
+import { Hero, type Controller, type RunOptions, type SpecialPrompt } from './hero';
 import { JUTSUS, type JutsuId, type Weapon } from './jutsus';
 import { rollChoices, type Choice } from './levelup';
 import { affinity, type Nature } from './natures';
-import { computeStats, type PassiveId } from './passives';
+import type { PassiveId } from './passives';
 import { Spawner } from './spawner';
 import { Director, type Arc, type SceneId } from './timeline';
 import type { RunSummary } from '../meta/summary';
 import type { Effect, Enemy, Field, FloatText, Hazard, Pickup, PickupKind, Player, Projectile, Stats } from './types';
+
+export type { RunOptions, SpecialPrompt } from './hero';
 
 /** Madara arrives at 20:00; beating him wins the run. */
 export const FINAL_TIME = 20 * 60;
@@ -18,35 +20,27 @@ const BASE_SPEED = 135;
 const MAX_TEXTS = 120;
 const MAX_XP_GEMS = 300;
 const CRIT_MULT = 1.5;
-
-export type GameState = 'play' | 'levelup' | 'paused' | 'over';
-
-/** Bonuses brought in from outside the run (permanent upgrades, skin). */
-export interface RunOptions {
-  mods?: StatMods;
-  xpMult?: number;
-  rerolls?: number;
-  extraJutsu?: boolean;
-  lookId?: string;
-}
-
-/** A modal choice that isn't a level-up (Tenten's shop, the Juubi's wish). */
-export interface SpecialPrompt {
-  title: string;
-  sub: string;
-  choices: Choice[];
-}
+const REVIVE_TIME = 5;
+const REVIVE_RANGE = 45;
 
 export const BIJU_NAMES = ['Shukaku', 'Matatabi', 'Isobu', 'Son Gokū', 'Kokuō', 'Saiken', 'Chōmei', 'Gyūki', 'Kurama'];
 const BIJU_FIRST = 60;
 const BIJU_EVERY = 115;
 const TENTEN_EVERY = 240;
 const PILL_TIME = 12;
-const PILL_MODS: StatMods = { dmg: 1.3, speed: 1.2 };
+
+export type GameState = 'play' | 'levelup' | 'paused' | 'over';
 
 export interface GameCallbacks {
   onLevelUp(): void;
   onGameOver(win: boolean): void;
+}
+
+export interface HeroSpec {
+  name: string;
+  charId: CharacterId;
+  input: Controller;
+  opts?: RunOptions;
 }
 
 function compact<T extends { dead: boolean }>(a: T[]): void {
@@ -61,10 +55,21 @@ export function xpForLevel(level: number): number {
   return Math.floor(5 + n * 6 + 0.4 * n * n);
 }
 
+/**
+ * The run simulation. Works for one hero (solo) or up to four (co-op, run on the server).
+ *
+ * Per-hero code (jutsus, level-up cards, pickups, boss targeting) runs with `actor` set to
+ * the hero involved; `player`, `stats`, `weapons`… read from the actor. Outside update(),
+ * the actor is the local hero, so the UI can read those accessors directly.
+ */
 export class Game {
   t = 0;
   state: GameState = 'play';
-  player: Player = { x: 0, y: 0, r: 13, hp: 100, facingX: 1, facingY: 0, invuln: 0, moving: false, anim: 0, slow: 0, kbx: 0, kby: 0 };
+  heroes: Hero[];
+  actor: Hero;
+  /** Hero shown by this client (0 in solo). */
+  localIndex = 0;
+
   enemies: Enemy[] = [];
   projectiles: Projectile[] = [];
   hazards: Hazard[] = [];
@@ -72,16 +77,10 @@ export class Game {
   pickups: Pickup[] = [];
   effects: Effect[] = [];
   texts: FloatText[] = [];
-  weapons: Weapon[] = [];
-  passives = new Map<PassiveId, number>();
-  stats: Stats;
   hash = new SpatialHash<Enemy>(64);
   spawner = new Spawner();
   director = new Director();
 
-  char: CharacterDef;
-  /** Index of the last transformation reached (-1 = none). */
-  form = -1;
   scene: SceneId = 'desierto';
   arcName = '';
   bossesDefeated: string[] = [];
@@ -89,54 +88,133 @@ export class Game {
   level = 1;
   xp = 0;
   xpNext = xpForLevel(1);
-  pendingLevelUps = 0;
-  rerolls = 2;
   kills = 0;
   ryo = 0;
-  dmgBy: Record<string, number> = {};
-  hurtFlash = 0;
   banner: { text: string; life: number; sub?: string } | null = null;
   tint: { color: string; life: number; max: number } | null = null;
+
+  /** Bijū collected this run (0-9) and how many have been placed on the map. */
+  biju = 0;
+  bijuSpawned = 0;
+  wishUsed = false;
 
   /** Visible world size; set by the renderer on resize. */
   viewW = 960;
   viewH = 600;
 
-  lookId: string;
-  specials: SpecialPrompt[] = [];
-  /** Bijū collected this run (0-9) and how many have been placed on the map. */
-  biju = 0;
-  bijuSpawned = 0;
-  wishUsed = false;
-  pillTime = 0;
-
   private near: Enemy[] = [];
   private xpGemCount = 0;
-  private extraMods: StatMods[] = [];
-  private xpMult: number;
   private nextTenten = TENTEN_EVERY;
+  private nextEnemyId = 1;
 
-  constructor(public input: Input, private cb: GameCallbacks, charId: CharacterId = 'naruto', private opts: RunOptions = {}) {
-    this.char = CHARACTERS[charId];
-    this.lookId = opts.lookId ?? charId;
-    this.xpMult = opts.xpMult ?? 1;
-    this.rerolls = opts.rerolls ?? 2;
-    this.stats = this.computeStats();
-    this.player.hp = this.stats.maxHp;
-    this.addJutsu(this.char.start);
-    if (opts.extraJutsu) {
-      const others = this.char.pool.filter((j) => j !== this.char.start);
-      this.addJutsu(others[Math.floor(Math.random() * others.length)]);
-    }
+  constructor(private cb: GameCallbacks, specs: HeroSpec[]) {
+    this.heroes = specs.map((s, i) => new Hero(i, s.name, s.charId, s.input, s.opts));
+    // Spread co-op heroes a little so they don't start stacked.
+    this.heroes.forEach((h, i) => {
+      if (i > 0) {
+        h.body.x = Math.cos(i * 2) * 40;
+        h.body.y = Math.sin(i * 2) * 40;
+      }
+    });
+    this.actor = this.heroes[0];
     this.director.update(this);
+  }
+
+  /** Someone joins a run in progress: they arrive at the team's level with automatic picks. */
+  addHero(spec: HeroSpec): Hero {
+    const h = new Hero(this.heroes.length, spec.name, spec.charId, spec.input, spec.opts);
+    const anchor = (this.aliveHeroes[0] ?? this.heroes[0]).body;
+    h.body.x = anchor.x + 30;
+    h.body.y = anchor.y;
+    h.body.invuln = 2;
+    this.heroes.push(h);
+    this.withActor(h, () => {
+      for (let i = 1; i < this.level; i++) {
+        const o = rollChoices(this);
+        (o.find((c) => c.tag === 'Evolución') ?? o[0]).apply(this);
+      }
+      for (let i = 0; i < h.char.transforms.length; i++) this.checkTransform();
+      h.body.hp = h.stats.maxHp;
+    });
+    this.announce(`¡${h.name} se une a la partida!`);
+    return h;
+  }
+
+  // ---------- acting-hero accessors (used by jutsus, cards and the UI) ----------
+
+  get local(): Hero {
+    return this.heroes[this.localIndex];
+  }
+  get player(): Player {
+    return this.actor.body;
+  }
+  get stats(): Stats {
+    return this.actor.stats;
+  }
+  get weapons(): Weapon[] {
+    return this.actor.weapons;
+  }
+  get passives(): Map<PassiveId, number> {
+    return this.actor.passives;
+  }
+  get char(): CharacterDef {
+    return this.actor.char;
+  }
+  get transform(): Transform | null {
+    return this.actor.transform;
+  }
+  get lookId(): string {
+    return this.actor.lookId;
+  }
+  get pillTime(): number {
+    return this.actor.pillTime;
+  }
+  get dmgBy(): Record<string, number> {
+    return this.actor.dmgBy;
+  }
+  get rerolls(): number {
+    return this.actor.rerolls;
+  }
+  set rerolls(v: number) {
+    this.actor.rerolls = v;
+  }
+  get pendingLevelUps(): number {
+    return this.actor.pendingLevelUps;
+  }
+  set pendingLevelUps(v: number) {
+    this.actor.pendingLevelUps = v;
+  }
+  get specials(): SpecialPrompt[] {
+    return this.actor.specials;
+  }
+  get currentSpecial(): SpecialPrompt | null {
+    return this.actor.specials[0] ?? null;
+  }
+  get hasPrompt(): boolean {
+    return this.actor.hasPrompt;
+  }
+  get hurtFlash(): number {
+    return this.actor.hurtFlash;
+  }
+  get lastHitBy(): string {
+    return this.actor.lastHitBy;
+  }
+
+  get aliveHeroes(): Hero[] {
+    return this.heroes.filter((h) => h.alive);
+  }
+
+  get anyPrompt(): boolean {
+    return this.heroes.some((h) => h.hasPrompt);
+  }
+
+  /** Co-op scaling: more players, tougher enemies. */
+  get partyScale(): number {
+    return this.heroes.length - 1;
   }
 
   get spawnRadius(): number {
     return Math.hypot(this.viewW, this.viewH) / 2 + 40;
-  }
-
-  get transform(): Transform | null {
-    return this.form >= 0 ? this.char.transforms[this.form] : null;
   }
 
   setView(w: number, h: number): void {
@@ -144,78 +222,89 @@ export class Game {
     this.viewH = h;
   }
 
-  // ---------- progression ----------
-
-  private computeStats(): Stats {
-    const mods: StatMods[] = [this.char.mods];
-    if (this.opts.mods) mods.push(this.opts.mods);
-    for (let i = 0; i <= this.form; i++) mods.push(this.char.transforms[i].mods);
-    mods.push(...this.extraMods);
-    if (this.pillTime > 0) mods.push(PILL_MODS);
-    const s = computeStats(this.passives, mods);
-    s.xp *= this.xpMult;
-    return s;
+  nearestHero(x: number, y: number): Hero {
+    let best = this.heroes[0];
+    let bestD = Infinity;
+    for (const h of this.heroes) {
+      if (!h.alive) continue;
+      const d = (h.body.x - x) ** 2 + (h.body.y - y) ** 2;
+      if (d < bestD) {
+        bestD = d;
+        best = h;
+      }
+    }
+    return best;
   }
 
-  private refreshStats(): void {
-    const oldMax = this.stats.maxHp;
-    this.stats = this.computeStats();
-    if (this.stats.maxHp > oldMax) this.player.hp += this.stats.maxHp - oldMax;
-    this.player.hp = Math.min(this.player.hp, this.stats.maxHp);
+  /** Runs `fn` as hero `h`, tagging any projectile or field it creates as theirs. */
+  withActor(h: Hero, fn: () => void): void {
+    const prev = this.actor;
+    this.actor = h;
+    const np = this.projectiles.length;
+    const nf = this.fields.length;
+    fn();
+    for (let i = np; i < this.projectiles.length; i++) this.projectiles[i].owner ??= h;
+    for (let i = nf; i < this.fields.length; i++) this.fields[i].owner ??= h;
+    this.actor = prev;
   }
+
+  // ---------- progression (acts on the actor) ----------
 
   jutsuLevel(id: JutsuId): number {
-    return this.weapons.find((w) => w.id === id)?.level ?? 0;
+    return this.actor.weapons.find((w) => w.id === id)?.level ?? 0;
   }
 
   addJutsu(id: JutsuId): void {
-    const existing = this.weapons.find((w) => w.id === id);
-    if (existing) existing.level++;
-    else this.weapons.push(JUTSUS[id].create());
+    this.actor.addJutsu(id);
   }
 
   evolve(id: JutsuId): void {
-    const w = this.weapons.find((x) => x.id === id);
+    const w = this.actor.weapons.find((x) => x.id === id);
     if (!w) return;
     w.evolved = true;
-    this.announce(`¡${JUTSUS[id].evolution.name}!`, 'Evolución de jutsu');
+    this.announce(`¡${JUTSUS[id].evolution.name}!`, this.heroes.length > 1 ? `${this.actor.name}: evolución de jutsu` : 'Evolución de jutsu');
     this.effects.push({ kind: 'flash', x: 0, y: 0, r: 0, life: 0.4, max: 0.4, color: '255,255,255' });
   }
 
   addPassive(id: PassiveId): void {
-    this.passives.set(id, (this.passives.get(id) ?? 0) + 1);
-    this.refreshStats();
+    this.actor.passives.set(id, (this.actor.passives.get(id) ?? 0) + 1);
+    this.actor.refreshStats();
   }
 
   heal(amount: number): void {
-    const p = this.player;
+    const p = this.actor.body;
+    if (this.actor.downed) return;
     const before = p.hp;
-    p.hp = Math.min(this.stats.maxHp, p.hp + amount);
+    p.hp = Math.min(this.actor.stats.maxHp, p.hp + amount);
     const healed = Math.round(p.hp - before);
     if (healed > 0) this.addText(p.x, p.y - 24, `+${healed}`, '#5cc96b');
   }
 
+  /** Shared team XP; every hero gets a level-up card. */
   addXp(v: number): void {
-    this.xp += v * this.stats.xp;
+    this.xp += v * this.actor.stats.xp;
     while (this.xp >= this.xpNext) {
       this.xp -= this.xpNext;
       this.level++;
       this.xpNext = xpForLevel(this.level);
-      this.pendingLevelUps++;
-      this.checkTransform();
+      for (const h of this.heroes) {
+        h.pendingLevelUps++;
+        this.withActor(h, () => this.checkTransform());
+      }
     }
   }
 
   private checkTransform(): void {
-    const next = this.char.transforms[this.form + 1];
+    const h = this.actor;
+    const next = h.char.transforms[h.form + 1];
     if (!next || this.level < next.level) return;
-    this.form++;
-    this.refreshStats();
-    this.heal(this.stats.maxHp * 0.3);
-    this.announce(`¡${next.name}!`, next.desc);
+    h.form++;
+    h.refreshStats();
+    this.heal(h.stats.maxHp * 0.3);
+    this.announce(`¡${next.name}!`, this.heroes.length > 1 ? `${h.name}: ${next.desc}` : next.desc);
     this.effects.push({ kind: 'flash', x: 0, y: 0, r: 0, life: 0.6, max: 0.6, color: '255,240,200' });
     // Burst that throws nearby enemies back.
-    const p = this.player;
+    const p = h.body;
     for (const e of this.enemies) {
       const dx = e.x - p.x;
       const dy = e.y - p.y;
@@ -228,29 +317,30 @@ export class Game {
     this.effects.push({ kind: 'ring', x: p.x, y: p.y, r: 160, life: 0.5, max: 0.5, color: next.aura });
   }
 
-  /** The prompt the UI should show next: a special (shop, wish) before level-ups. */
-  get currentSpecial(): SpecialPrompt | null {
-    return this.specials[0] ?? null;
-  }
-
-  get hasPrompt(): boolean {
-    return this.specials.length > 0 || this.pendingLevelUps > 0;
-  }
-
-  /** Called by the UI once a card has been applied. */
+  /** Called once a card has been applied for the actor (the local hero in solo). */
   finishLevelUp(): void {
-    if (this.specials.length) this.specials.shift();
-    else this.pendingLevelUps = Math.max(0, this.pendingLevelUps - 1);
-    if (this.hasPrompt) this.cb.onLevelUp();
-    else this.state = 'play';
+    const h = this.actor;
+    if (h.specials.length) h.specials.shift();
+    else h.pendingLevelUps = Math.max(0, h.pendingLevelUps - 1);
+    if (h.hasPrompt) this.cb.onLevelUp();
+    else if (!this.anyPrompt) this.state = 'play';
+  }
+
+  /** Applies choice `c` for hero `h` (network play). */
+  applyChoice(h: Hero, c: Choice): void {
+    this.withActor(h, () => c.apply(this));
+    if (h.specials.length) h.specials.shift();
+    else h.pendingLevelUps = Math.max(0, h.pendingLevelUps - 1);
+    if (!this.anyPrompt && this.state === 'levelup') this.state = 'play';
   }
 
   // ---------- bijū, Tenten, pills ----------
 
   private placeNear(kind: PickupKind, value: number, min: number, max: number): void {
+    const h = this.aliveHeroes[Math.floor(Math.random() * this.aliveHeroes.length)] ?? this.heroes[0];
     const a = Math.random() * Math.PI * 2;
     const d = min + Math.random() * (max - min);
-    this.drop(kind, this.player.x + Math.cos(a) * d, this.player.y + Math.sin(a) * d, value);
+    this.drop(kind, h.body.x + Math.cos(a) * d, h.body.y + Math.sin(a) * d, value);
   }
 
   private updateWorldEvents(): void {
@@ -272,7 +362,7 @@ export class Game {
     this.effects.push({ kind: 'ring', x: this.player.x, y: this.player.y, r: 90, life: 0.6, max: 0.6, color: '#ff8a3c' });
     if (this.biju >= 9 && !this.wishUsed) {
       this.wishUsed = true;
-      this.specials.push({ title: '¡El Juubi te concede un deseo!', sub: 'Has reunido a los 9 bijū', choices: this.wishChoices() });
+      this.actor.specials.push({ title: '¡El Juubi te concede un deseo!', sub: 'Has reunido a los 9 bijū', choices: this.wishChoices() });
     }
   }
 
@@ -280,14 +370,14 @@ export class Game {
     const mk = (key: string, title: string, desc: string, icon: string, color: string, apply: (g: Game) => void): Choice => ({ key, title, tag: 'Deseo', isNew: true, desc, icon, color, weight: 1, apply });
     return [
       mk('w:vida', 'Vida del Juubi', 'Te cura por completo, +50 de vida máxima y +1 vida/s.', '命', '#5cc96b', (g) => {
-        g.extraMods.push({ maxHp: 50, regen: 1 });
-        g.refreshStats();
+        g.actor.extraMods.push({ maxHp: 50, regen: 1 });
+        g.actor.refreshStats();
         g.heal(g.stats.maxHp);
       }),
       mk('w:poder', 'Poder del Juubi', 'Todos tus jutsus suben un nivel y +20% de daño.', '力', '#ff8a3c', (g) => {
         for (const w of g.weapons) if (w.level < 5) w.level++;
-        g.extraMods.push({ dmg: 1.2 });
-        g.refreshStats();
+        g.actor.extraMods.push({ dmg: 1.2 });
+        g.actor.refreshStats();
       }),
       mk('w:bijudama', 'Bijūdama', 'Arrasa a todos los enemigos de la pantalla; los jefes pierden un 15% de vida.', '玉', '#b48cff', (g) => {
         const p = g.player;
@@ -313,23 +403,24 @@ export class Game {
   }
 
   takePill(seconds: number): void {
-    const had = this.pillTime > 0;
-    this.pillTime = Math.max(this.pillTime, seconds);
-    if (!had) this.refreshStats();
+    const h = this.actor;
+    const had = h.pillTime > 0;
+    h.pillTime = Math.max(h.pillTime, seconds);
+    if (!had) h.refreshStats();
     this.announce('¡Píldora de soldado!', '+30% de daño y +20% de velocidad');
   }
 
-  summary(win: boolean): RunSummary {
+  summary(win: boolean, h: Hero = this.local): RunSummary {
     return {
-      char: this.char.id,
+      char: h.char.id,
       win,
       time: this.t,
       level: this.level,
       kills: this.kills,
       bosses: [...this.bossesDefeated],
-      form: this.form,
-      finalForm: this.form >= 0 && this.form === this.char.transforms.length - 1,
-      evolutions: this.weapons.filter((w) => w.evolved).map((w) => w.id),
+      form: h.form,
+      finalForm: h.form >= 0 && h.form === h.char.transforms.length - 1,
+      evolutions: h.weapons.filter((w) => w.evolved).map((w) => w.id),
       biju: this.biju,
       wish: this.wishUsed,
       ryo: this.ryo,
@@ -349,12 +440,21 @@ export class Game {
 
   // ---------- spawning ----------
 
+  /** A point on the spawn ring around a random living hero. */
+  spawnPoint(radiusMul = 1): { x: number; y: number } {
+    const alive = this.aliveHeroes;
+    const h = alive[Math.floor(Math.random() * alive.length)] ?? this.heroes[0];
+    const a = Math.random() * Math.PI * 2;
+    return { x: h.body.x + Math.cos(a) * this.spawnRadius * radiusMul, y: h.body.y + Math.sin(a) * this.spawnRadius * radiusMul };
+  }
+
   spawnEnemy(kind: MinionKind, x: number, y: number): void {
     const d = ENEMIES[kind];
     const minutes = this.t / 60;
-    const hp = d.hp * (1 + minutes * 0.25 + minutes * minutes * 0.03);
+    const hp = d.hp * (1 + minutes * 0.25 + minutes * minutes * 0.03) * (1 + 0.5 * this.partyScale);
     const natures = this.director.arc.natures;
     this.enemies.push({
+      id: this.nextEnemyId++,
       kind,
       nature: natures[Math.floor(Math.random() * natures.length)],
       x,
@@ -379,13 +479,16 @@ export class Game {
     const d = BOSSES[id];
     const a = (index / count) * Math.PI * 2 - Math.PI / 2;
     const r = this.spawnRadius * 0.85;
+    const anchor = this.aliveHeroes[0] ?? this.heroes[0];
+    const hp = d.hp * (1 + 0.6 * this.partyScale);
     this.enemies.push({
+      id: this.nextEnemyId++,
       kind: 'boss',
       nature: d.hearts ? d.hearts[0] : d.nature,
-      x: this.player.x + Math.cos(a) * r,
-      y: this.player.y + Math.sin(a) * r,
-      hp: d.hp,
-      maxHp: d.hp,
+      x: anchor.body.x + Math.cos(a) * r,
+      y: anchor.body.y + Math.sin(a) * r,
+      hp,
+      maxHp: hp,
       r: d.r,
       speed: d.speed,
       dmg: d.dmg,
@@ -400,7 +503,7 @@ export class Game {
       vy: 0,
       boss: { id, name: d.name, lookId: d.lookId, brain: d.brain(), hearts: d.hearts, final: d.final },
     });
-    if (index === 0) this.announce(count > 1 ? `¡${count} enemigos poderosos!` : `¡${d.name}!`, count > 1 ? d.name.split(' ')[0] === 'Camino' ? 'Los Seis Caminos de Pain' : 'Llegan los jefes' : 'Ha aparecido un jefe');
+    if (index === 0) this.announce(count > 1 ? `¡${count} enemigos poderosos!` : `¡${d.name}!`, count > 1 ? (d.name.split(' ')[0] === 'Camino' ? 'Los Seis Caminos de Pain' : 'Llegan los jefes') : 'Ha aparecido un jefe');
   }
 
   /** Enemy bullet toward an angle. */
@@ -496,17 +599,18 @@ export class Game {
 
   // ---------- combat ----------
 
+  /** Damage from the actor's jutsu `src`, with nature affinity and the actor's crit chance. */
   hit(e: Enemy, dmg: number, kx: number, ky: number, src: string): void {
     if (e.dead) return;
     const nature: Nature = JUTSUS[src as JutsuId]?.nature ?? 'neutral';
     const aff = affinity(nature, e.nature);
-    const crit = Math.random() < this.stats.crit;
+    const crit = Math.random() < this.actor.stats.crit;
     const amount = Math.max(1, Math.round(dmg * aff * e.dmgTaken * (crit ? CRIT_MULT : 1)));
     e.hp -= amount;
     e.flash = 0.1;
     e.kbx += kx * e.kbRes;
     e.kby += ky * e.kbRes;
-    this.dmgBy[src] = (this.dmgBy[src] ?? 0) + amount;
+    this.actor.dmgBy[src] = (this.actor.dmgBy[src] ?? 0) + amount;
     const color = crit ? '#ffd23f' : aff > 1 ? '#ff9a3c' : aff < 1 ? '#8a94a6' : '#fff';
     this.addText(e.x, e.y - e.r, crit ? `${amount}!` : String(amount), color, crit || aff > 1);
     if (e.hp <= 0) this.kill(e);
@@ -522,18 +626,21 @@ export class Game {
     this.effects.push({ kind: 'boom', x, y, r, life: 0.35, max: 0.35, color });
   }
 
-  /** Who dealt the last hit (shown in the dev sim). */
-  lastHitBy = '';
-
-  hurtPlayer(dmg: number, src = 'ataque'): void {
-    const p = this.player;
-    if (p.invuln > 0 || dmg <= 0) return;
-    this.lastHitBy = src;
-    const amount = dmg * (1 - this.stats.armor);
+  hurtHero(h: Hero, dmg: number, src = 'ataque'): void {
+    const p = h.body;
+    if (h.downed || p.invuln > 0 || dmg <= 0) return;
+    h.lastHitBy = src;
+    const amount = dmg * (1 - h.stats.armor);
     p.hp -= amount;
     p.invuln = 0.45;
-    this.hurtFlash = 0.2;
+    h.hurtFlash = 0.2;
     this.addText(p.x, p.y - 20, `-${Math.round(amount)}`, '#ff5a5a');
+    if (p.hp <= 0) {
+      p.hp = 0;
+      h.downed = true;
+      h.revive = 0;
+      if (this.heroes.length > 1 && this.aliveHeroes.length) this.announce(`¡${h.name} ha caído!`, 'Quédate a su lado para revivirle');
+    }
   }
 
   private kill(e: Enemy): void {
@@ -561,10 +668,13 @@ export class Game {
     this.drop('xp', e.x + 20, e.y, 25);
     for (let i = 0; i < 6; i++) this.drop('ryo', e.x + (Math.random() - 0.5) * 60, e.y + (Math.random() - 0.5) * 60, 4);
     this.announce(`¡${b.name} derrotado!`, 'Recoge el cofre');
-    if (b.final) {
-      this.state = 'over';
-      this.cb.onGameOver(true);
-    }
+    if (b.final) this.finish(true);
+  }
+
+  private finish(win: boolean): void {
+    if (this.state === 'over') return;
+    this.state = 'over';
+    this.cb.onGameOver(win);
   }
 
   private dropXp(x: number, y: number, value: number): void {
@@ -589,14 +699,18 @@ export class Game {
     this.texts.push({ x: x + (Math.random() - 0.5) * 8, y, text, life: 0.6, color, big });
   }
 
-  /** Golden chest: several free upgrades, evolutions first. */
+  /** Golden chest: several free upgrades for every living hero, evolutions first. */
   private openChest(count: number): void {
     const got: string[] = [];
-    for (let i = 0; i < count; i++) {
-      const options = rollChoices(this);
-      const pick = options.find((c) => c.tag === 'Evolución') ?? options[0];
-      pick.apply(this);
-      got.push(pick.title);
+    for (const h of this.aliveHeroes) {
+      this.withActor(h, () => {
+        for (let i = 0; i < count; i++) {
+          const options = rollChoices(this);
+          const pick = options.find((c) => c.tag === 'Evolución') ?? options[0];
+          pick.apply(this);
+          if (h === this.local || this.heroes.length === 1) got.push(pick.title);
+        }
+      });
     }
     this.announce('¡Cofre dorado!', got.join(' · '));
   }
@@ -606,40 +720,15 @@ export class Game {
   update(dt: number): void {
     if (this.state !== 'play') return;
     this.t += dt;
-    const p = this.player;
-    const s = this.stats;
 
     this.director.update(this);
     this.updateWorldEvents();
-    if (this.pillTime > 0) {
-      this.pillTime -= dt;
-      if (this.pillTime <= 0) this.refreshStats();
-    }
-
-    const ax = this.input.axis();
-    p.moving = ax.x !== 0 || ax.y !== 0;
-    const slowMul = p.slow > 0 ? 0.5 : 1;
-    if (p.moving) {
-      p.x += ax.x * BASE_SPEED * s.speed * slowMul * dt;
-      p.y += ax.y * BASE_SPEED * s.speed * slowMul * dt;
-      const l = Math.hypot(ax.x, ax.y);
-      p.facingX = ax.x / l;
-      p.facingY = ax.y / l;
-      p.anim += dt;
-    }
-    p.x += p.kbx * dt;
-    p.y += p.kby * dt;
-    const decay = Math.exp(-6 * dt);
-    p.kbx *= decay;
-    p.kby *= decay;
-    if (p.slow > 0) p.slow -= dt;
-    if (p.invuln > 0) p.invuln -= dt;
-    if (this.hurtFlash > 0) this.hurtFlash -= dt;
     if (this.tint) {
       this.tint.life -= dt;
       if (this.tint.life <= 0) this.tint = null;
     }
-    if (s.regen > 0) p.hp = Math.min(s.maxHp, p.hp + s.regen * dt);
+
+    for (const h of this.heroes) this.updateHero(h, dt);
 
     this.spawner.update(this, dt);
 
@@ -647,7 +736,12 @@ export class Game {
     for (const e of this.enemies) if (!e.dead) this.hash.insert(e);
 
     this.updateEnemies(dt);
-    for (const w of this.weapons) w.update(this, dt);
+    for (const h of this.heroes) {
+      if (!h.alive) continue;
+      this.withActor(h, () => {
+        for (const w of h.weapons) w.update(this, dt);
+      });
+    }
     this.updateProjectiles(dt);
     this.updateFields(dt);
     this.updateHazards(dt);
@@ -671,31 +765,75 @@ export class Game {
     compact(this.fields);
     compact(this.pickups);
 
+    this.actor = this.local;
     if (this.state !== 'play') return; // final boss died this frame
-    if (p.hp <= 0) {
-      p.hp = 0;
-      this.state = 'over';
-      this.cb.onGameOver(false);
+    if (!this.aliveHeroes.length) {
+      this.finish(false);
       return;
     }
-    if (this.hasPrompt) {
+    if (this.anyPrompt) {
       this.state = 'levelup';
       this.cb.onLevelUp();
     }
   }
 
+  private updateHero(h: Hero, dt: number): void {
+    const p = h.body;
+    if (h.hurtFlash > 0) h.hurtFlash -= dt;
+    if (h.pillTime > 0) {
+      h.pillTime -= dt;
+      if (h.pillTime <= 0) h.refreshStats();
+    }
+    if (h.downed) {
+      p.moving = false;
+      // A living teammate close by brings them back.
+      const helper = this.heroes.some((o) => o !== h && o.alive && Math.hypot(o.body.x - p.x, o.body.y - p.y) < REVIVE_RANGE);
+      h.revive = helper ? h.revive + dt / REVIVE_TIME : Math.max(0, h.revive - dt / REVIVE_TIME);
+      if (h.revive >= 1) {
+        h.downed = false;
+        h.revive = 0;
+        p.hp = h.stats.maxHp * 0.5;
+        p.invuln = 2;
+        this.announce(`¡${h.name} vuelve a la lucha!`);
+      }
+      return;
+    }
+    const s = h.stats;
+    const ax = h.input.axis();
+    p.moving = ax.x !== 0 || ax.y !== 0;
+    const slowMul = p.slow > 0 ? 0.5 : 1;
+    if (p.moving) {
+      p.x += ax.x * BASE_SPEED * s.speed * slowMul * dt;
+      p.y += ax.y * BASE_SPEED * s.speed * slowMul * dt;
+      const l = Math.hypot(ax.x, ax.y);
+      p.facingX = ax.x / l;
+      p.facingY = ax.y / l;
+      p.anim += dt;
+    }
+    p.x += p.kbx * dt;
+    p.y += p.kby * dt;
+    const decay = Math.exp(-6 * dt);
+    p.kbx *= decay;
+    p.kby *= decay;
+    if (p.slow > 0) p.slow -= dt;
+    if (p.invuln > 0) p.invuln -= dt;
+    if (s.regen > 0) p.hp = Math.min(s.maxHp, p.hp + s.regen * dt);
+  }
+
   private updateEnemies(dt: number): void {
-    const p = this.player;
     const far = this.spawnRadius * 1.5;
     const decay = Math.exp(-10 * dt);
     for (const e of this.enemies) {
       if (e.dead) continue;
+      const target = this.nearestHero(e.x, e.y);
+      const p = target.body;
       const dx = p.x - e.x;
       const dy = p.y - e.y;
       const d = Math.hypot(dx, dy) || 1;
 
       if (e.boss) {
-        e.boss.brain.update(this, e, dt);
+        const brain = e.boss.brain;
+        this.withActor(target, () => brain.update(this, e, dt));
         // Bosses never despawn; pull them back in if the player outran them.
         if (d > far) {
           e.x = p.x - (dx / d) * this.spawnRadius;
@@ -740,30 +878,33 @@ export class Game {
       e.kby *= decay;
       if (e.flash > 0) e.flash -= dt;
 
-      if (d < e.r + p.r) this.hurtPlayer(e.dmg, e.boss ? e.boss.name : e.kind);
+      if (target.alive && d < e.r + p.r) this.hurtHero(target, e.dmg, e.boss ? e.boss.name : e.kind);
     }
   }
 
   private updateProjectiles(dt: number): void {
     for (const pr of this.projectiles) {
       if (pr.dead) continue;
-      pr.x += pr.vx * dt;
-      pr.y += pr.vy * dt;
-      pr.life -= dt;
-      if (pr.life > 0) {
-        for (const e of this.enemiesInRadius(pr.x, pr.y, pr.r)) {
-          const next = pr.hits.get(e) ?? -1;
-          if (next > this.t) continue;
-          pr.hits.set(e, this.t + pr.rehit);
-          const sp = Math.hypot(pr.vx, pr.vy) || 1;
-          this.hit(e, pr.dmg, (pr.vx / sp) * pr.knock, (pr.vy / sp) * pr.knock, pr.src);
-          if (--pr.pierce <= 0) break;
+      const owner = pr.owner ?? this.heroes[0];
+      this.withActor(owner, () => {
+        pr.x += pr.vx * dt;
+        pr.y += pr.vy * dt;
+        pr.life -= dt;
+        if (pr.life > 0) {
+          for (const e of this.enemiesInRadius(pr.x, pr.y, pr.r)) {
+            const next = pr.hits.get(e) ?? -1;
+            if (next > this.t) continue;
+            pr.hits.set(e, this.t + pr.rehit);
+            const sp = Math.hypot(pr.vx, pr.vy) || 1;
+            this.hit(e, pr.dmg, (pr.vx / sp) * pr.knock, (pr.vy / sp) * pr.knock, pr.src);
+            if (--pr.pierce <= 0) break;
+          }
         }
-      }
-      if (pr.life <= 0 || pr.pierce <= 0) {
-        pr.dead = true;
-        pr.onEnd?.(pr);
-      }
+        if (pr.life <= 0 || pr.pierce <= 0) {
+          pr.dead = true;
+          pr.onEnd?.(pr);
+        }
+      });
     }
   }
 
@@ -773,18 +914,21 @@ export class Game {
       f.timer -= dt;
       if (f.timer <= 0) {
         f.timer = f.tick;
-        for (const e of this.enemiesInRadius(f.x, f.y, f.r)) this.hit(e, f.dmg, 0, 0, f.src);
+        this.withActor(f.owner ?? this.heroes[0], () => {
+          for (const e of this.enemiesInRadius(f.x, f.y, f.r)) this.hit(e, f.dmg, 0, 0, f.src);
+        });
       }
       if (f.life <= 0) f.dead = true;
     }
   }
 
   private updateHazards(dt: number): void {
-    const p = this.player;
+    const alive = this.aliveHeroes;
     for (const h of this.hazards) {
       h.life -= dt;
       if (h.kind === 'bullet') {
         if (h.homing) {
+          const p = this.nearestHero(h.x, h.y).body;
           const want = Math.atan2(p.y - h.y, p.x - h.x);
           const cur = Math.atan2(h.vy, h.vx);
           let diff = want - cur;
@@ -797,25 +941,33 @@ export class Game {
         }
         h.x += h.vx * dt;
         h.y += h.vy * dt;
-        // Bursting bullets (clay birds) stop short of the player and leave a dodgeable telegraph.
-        const reach = h.burst ? h.burst * 0.6 : h.r + p.r;
-        const touching = Math.hypot(p.x - h.x, p.y - h.y) < reach;
-        if (touching && !h.burst) this.hurtPlayer(h.dmg, 'bala');
-        if (touching || h.life <= 0) {
+        let ended = h.life <= 0;
+        for (const hero of alive) {
+          const p = hero.body;
+          // Bursting bullets (clay birds) stop short of the player and leave a dodgeable telegraph.
+          const reach = h.burst ? h.burst * 0.6 : h.r + p.r;
+          if (Math.hypot(p.x - h.x, p.y - h.y) < reach) {
+            if (!h.burst) this.hurtHero(hero, h.dmg, 'bala');
+            ended = true;
+            break;
+          }
+        }
+        if (ended) {
           h.dead = true;
           if (h.burst) this.zone(h.x, h.y, h.burst, 0.55, 12, '#f0e6d2');
         }
         continue;
       }
       // zone
-      const inside = Math.hypot(p.x - h.x, p.y - h.y) < h.r + p.r * 0.5;
       if (h.delay! > 0) {
         h.delay! -= dt;
         if (h.delay! <= 0) {
           if (h.dmg > 0) {
             this.effects.push({ kind: 'boom', x: h.x, y: h.y, r: h.r, life: 0.3, max: 0.3, color: h.color });
-            if (inside) {
-              this.hurtPlayer(h.dmg, 'zona');
+            for (const hero of alive) {
+              const p = hero.body;
+              if (Math.hypot(p.x - h.x, p.y - h.y) >= h.r + p.r * 0.5) continue;
+              this.hurtHero(hero, h.dmg, 'zona');
               if (h.push) {
                 const dx = p.x - h.x;
                 const dy = p.y - h.y;
@@ -827,24 +979,28 @@ export class Game {
           }
           if (!h.linger) h.dead = true;
         }
-      } else if (h.linger && inside) {
-        this.hurtPlayer(h.dmg, 'fuego');
+      } else if (h.linger) {
+        for (const hero of alive) {
+          const p = hero.body;
+          if (Math.hypot(p.x - h.x, p.y - h.y) < h.r + p.r * 0.5) this.hurtHero(hero, h.dmg, 'fuego');
+        }
       }
       if (h.life <= 0) h.dead = true;
     }
   }
 
   private updatePickups(dt: number): void {
-    const p = this.player;
-    const mag = this.stats.magnet;
     let gems = 0;
     for (const pk of this.pickups) {
       if (pk.dead) continue;
       if (pk.kind === 'xp') gems++;
+      const hero = this.nearestHero(pk.x, pk.y);
+      if (!hero.alive) continue;
+      const p = hero.body;
       const dx = p.x - pk.x;
       const dy = p.y - pk.y;
       const d = Math.hypot(dx, dy) || 1;
-      if (!pk.attracted && d < mag) pk.attracted = true;
+      if (!pk.attracted && d < hero.stats.magnet) pk.attracted = true;
       if (pk.attracted) {
         pk.speed += 900 * dt;
         const step = Math.min(d, (220 + pk.speed) * dt);
@@ -853,7 +1009,7 @@ export class Game {
       }
       if (d < p.r + 8) {
         pk.dead = true;
-        this.collect(pk);
+        this.withActor(hero, () => this.collect(pk));
       }
     }
     this.xpGemCount = gems;
@@ -882,7 +1038,7 @@ export class Game {
         this.collectBiju(pk.value);
         break;
       case 'tenten':
-        this.specials.push({ title: 'Tienda de Tenten', sub: 'Elige un regalo', choices: this.tentenChoices() });
+        this.actor.specials.push({ title: 'Tienda de Tenten', sub: 'Elige un regalo', choices: this.tentenChoices() });
         break;
       case 'pill':
         this.takePill(PILL_TIME);
@@ -890,3 +1046,5 @@ export class Game {
     }
   }
 }
+
+export type { StatMods };

@@ -1,20 +1,26 @@
 import { Input } from './core/input';
-import { loadSave, writeSave } from './core/save';
+import { loadSave, onSaveWritten, writeSave } from './core/save';
 import { CHARACTERS, CHARACTER_ORDER, type CharacterDef, type CharacterId } from './game/characters';
-import { rewardText } from './meta/achievements';
-import { dailyMissions, ensureDaily } from './meta/missions';
-import { applyRun, refreshUnlocks } from './meta/progress';
-import { SKINS, skinFor } from './meta/skins';
-import { runBonuses } from './meta/upgrades';
-import { MetaScreen, type MetaTab } from './ui/meta';
 import { Game } from './game/game';
 import { JUTSUS } from './game/jutsus';
+import { rollChoices, type Choice } from './game/levelup';
 import { LOOKS } from './game/looks';
 import { NATURE_COLOR, NATURE_NAME } from './game/natures';
 import { PASSIVES } from './game/passives';
-import { rollChoices, type Choice } from './game/levelup';
+import { gameView } from './game/view';
+import { rewardText } from './meta/achievements';
+import { dailyMissions, ensureDaily } from './meta/missions';
+import { applyRun, refreshUnlocks, type RunRewards } from './meta/progress';
+import { SKINS, skinFor } from './meta/skins';
+import type { RunSummary } from './meta/summary';
+import { runBonuses } from './meta/upgrades';
+import { Online } from './net/api';
+import { CoopClient, NetGame } from './net/coop';
+import type { ChoiceSnap, PromptMsg } from './net/protocol';
 import { drawGround, formatTime, render, type View } from './render/render';
 import { drawLookDirect } from './render/sprites';
+import { CoopScreen } from './ui/coopScreen';
+import { MetaScreen, type MetaTab } from './ui/meta';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -26,19 +32,29 @@ const save = loadSave();
 
 const screens = {
   menu: $('menu'),
+  auth: $('auth'),
+  coop: $('coop'),
   meta: $('meta'),
   levelup: $('levelup'),
   pause: $('pause'),
   gameover: $('gameover'),
 };
 const pauseBtn = $('pauseBtn');
+const waitNote = $('waitNote');
 
+/** Solo run (simulated here) … */
 let game: Game | null = null;
+/** … or co-op run (simulated on the server, drawn from snapshots). */
+let net: NetGame | null = null;
 let choices: Choice[] = [];
 
 function show(name: keyof typeof screens | null): void {
   for (const [k, el] of Object.entries(screens)) el.classList.toggle('hidden', k !== name);
-  pauseBtn.classList.toggle('hidden', !(game && game.state === 'play'));
+  pauseBtn.classList.toggle('hidden', !((game && game.state === 'play') || (net && !net.over && name === null)));
+}
+
+function esc(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
 // ---------------- sizing ----------------
@@ -56,9 +72,78 @@ function resize(): void {
 window.addEventListener('resize', resize);
 resize();
 
+// ---------------- online: account + cloud save ----------------
+
+const online = new Online(save, () => {
+  if (!game && !net && !screens.menu.classList.contains('hidden')) renderMenuParts();
+  else if (!game && !net) renderAccountLine();
+});
+onSaveWritten(() => online.schedulePush());
+
+let authCreate = false;
+let afterLogin: (() => void) | null = null;
+
+function openAuth(note?: string, then?: () => void): void {
+  afterLogin = then ?? null;
+  $('authError').textContent = '';
+  $('authNote').textContent = note ?? 'Con una cuenta tu progreso se guarda en la nube, apareces en el ranking y puedes jugar en cooperativo.';
+  setAuthMode(false);
+  show('auth');
+  $<HTMLInputElement>('authName').focus();
+}
+
+function setAuthMode(create: boolean): void {
+  authCreate = create;
+  $('authTitle').textContent = create ? 'Crear cuenta' : 'Entrar';
+  $('authSubmit').textContent = create ? 'Crear cuenta' : 'Entrar';
+  $('authSwitch').textContent = create ? '¿Ya tienes cuenta? Entra' : '¿No tienes cuenta? Créala';
+  $<HTMLInputElement>('authPass').autocomplete = create ? 'new-password' : 'current-password';
+}
+
+$('authSwitch').addEventListener('click', (e) => {
+  e.preventDefault();
+  setAuthMode(!authCreate);
+});
+$('authBack').addEventListener('click', () => renderMenu());
+$('authForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = $<HTMLInputElement>('authName').value;
+  const pass = $<HTMLInputElement>('authPass').value;
+  $('authError').textContent = '';
+  $('authSubmit').setAttribute('disabled', '');
+  try {
+    await online.login(name, pass, authCreate);
+    $<HTMLInputElement>('authPass').value = '';
+    const next = afterLogin;
+    afterLogin = null;
+    if (next) next();
+    else renderMenu();
+  } catch (err) {
+    $('authError').textContent = (err as Error).message;
+  } finally {
+    $('authSubmit').removeAttribute('disabled');
+  }
+});
+
+function renderAccountLine(): void {
+  const el = $('accountLine');
+  if (online.account) {
+    el.innerHTML = `<span>Conectado como <b>${esc(online.account.name)}</b> · progreso en la nube</span><button id="logoutBtn">Salir</button>`;
+    $('logoutBtn').addEventListener('click', async () => {
+      coop.close();
+      await online.logout();
+      renderMenu();
+    });
+  } else {
+    el.innerHTML = `<span>Invitado · el progreso se guarda solo en este navegador</span><button id="loginBtn">Entrar</button>`;
+    $('loginBtn').addEventListener('click', () => openAuth());
+  }
+  $('notices').innerHTML = online.notices.map((n) => `<p>${esc(n)}</p>`).join('');
+}
+
 // ---------------- meta screens ----------------
 
-const meta = new MetaScreen(save, $('metaRoot'), () => renderMenuParts());
+const meta = new MetaScreen(save, $('metaRoot'), () => renderMenuParts(), online);
 
 function openMeta(tab: MetaTab): void {
   meta.open(tab);
@@ -112,6 +197,7 @@ function renderMenuParts(): void {
   }
   showCharInfo(CHARACTERS[save.selected as CharacterId]);
 
+  renderAccountLine();
   $('menuWallet').innerHTML = `<span>両 Ryō <b>${save.ryo}</b></span><span>巻 Pergaminos <b>${save.tickets}</b></span>`;
   $('menuStats').innerHTML = `
     <span>Partidas <b>${save.runs}</b></span>
@@ -159,32 +245,39 @@ function showLocked(c: CharacterDef): void {
     <p class="muted">Jutsu inicial: ${JUTSUS[c.start].name}</p>`;
 }
 
+// ---------------- solo run ----------------
+
 function startRun(): void {
+  net = null;
   const charId = save.selected as CharacterId;
   const bonus = runBonuses(save, charId);
-  game = new Game(input, { onLevelUp: openLevelUp, onGameOver: endRun }, charId, {
-    mods: bonus.mods,
-    xpMult: bonus.xpMult,
-    rerolls: bonus.rerolls,
-    extraJutsu: bonus.extraJutsu,
-    lookId: skinFor(charId, save.skinSel)?.lookId,
-  });
+  game = new Game({ onLevelUp: openLevelUp, onGameOver: endRun }, [
+    {
+      name: online.account?.name ?? 'Tú',
+      charId,
+      input,
+      opts: {
+        mods: bonus.mods,
+        xpMult: bonus.xpMult,
+        rerolls: bonus.rerolls,
+        extraJutsu: bonus.extraJutsu,
+        lookId: skinFor(charId, save.skinSel)?.lookId,
+      },
+    },
+  ]);
   game.setView(view.w / view.zoom, view.h / view.zoom);
   if (import.meta.env.DEV) (window as unknown as { __game: Game }).__game = game;
   show(null);
 }
 
-// ---------------- level up ----------------
+// ---------------- level-up cards (solo and co-op) ----------------
 
-function openLevelUp(): void {
-  if (!game) return;
-  const special = game.currentSpecial;
-  choices = special ? special.choices : rollChoices(game);
-  $('levelTitle').textContent = special ? special.title : `¡Nivel ${game.level - game.pendingLevelUps + 1}!`;
-  $('levelSub').textContent = special ? `${special.sub} · 1 2 3` : 'Elige una mejora · 1 2 3';
-  const cards = $('cards');
-  cards.innerHTML = '';
-  choices.forEach((c, i) => {
+function showCards(title: string, sub: string, cards: ChoiceSnap[], reroll: { left: number; can: boolean } | null): void {
+  $('levelTitle').textContent = title;
+  $('levelSub').textContent = `${sub} · 1 2 3`;
+  const root = $('cards');
+  root.innerHTML = '';
+  cards.forEach((c, i) => {
     const b = document.createElement('button');
     b.className = 'card';
     if (c.tag === 'Evolución') b.style.borderColor = '#ffd23f';
@@ -196,16 +289,41 @@ function openLevelUp(): void {
       </div>
       <div class="desc">${c.desc}</div>`;
     b.addEventListener('click', () => pick(i));
-    cards.appendChild(b);
+    root.appendChild(b);
   });
-  const reroll = $<HTMLButtonElement>('rerollBtn');
-  reroll.textContent = `Volver a elegir (${game.rerolls}) · R`;
-  reroll.disabled = game.rerolls <= 0;
-  reroll.classList.toggle('hidden', !!special);
+  const btn = $<HTMLButtonElement>('rerollBtn');
+  btn.classList.toggle('hidden', !reroll);
+  if (reroll) {
+    btn.textContent = `Volver a elegir (${reroll.left}) · R`;
+    btn.disabled = !reroll.can;
+  }
   show('levelup');
 }
 
+function openLevelUp(): void {
+  if (!game) return;
+  const special = game.currentSpecial;
+  choices = special ? special.choices : rollChoices(game);
+  showCards(
+    special ? special.title : `¡Nivel ${game.level - game.pendingLevelUps + 1}!`,
+    special ? special.sub : 'Elige una mejora',
+    choices,
+    special ? null : { left: game.rerolls, can: game.rerolls > 0 },
+  );
+}
+
+function openNetPrompt(p: PromptMsg): void {
+  showCards(p.title, `${p.sub} · se elige sola en ${p.seconds} s`, p.choices, { left: p.rerolls, can: p.canReroll });
+}
+
 function pick(i: number): void {
+  if (net) {
+    if (!net.prompt) return;
+    coop.send({ type: 'pick', index: i });
+    net.prompt = null;
+    show(null);
+    return;
+  }
   if (!game || game.state !== 'levelup' || !choices[i]) return;
   choices[i].apply(game);
   choices = [];
@@ -215,6 +333,10 @@ function pick(i: number): void {
 }
 
 function reroll(): void {
+  if (net) {
+    if (net.prompt?.canReroll) coop.send({ type: 'reroll' });
+    return;
+  }
   if (!game || game.state !== 'levelup' || game.rerolls <= 0 || game.currentSpecial) return;
   game.rerolls--;
   openLevelUp();
@@ -225,6 +347,13 @@ $('rerollBtn').addEventListener('click', reroll);
 // ---------------- pause ----------------
 
 function openPause(): void {
+  if (net && !net.over) {
+    // Co-op never pauses the world; this is just a menu.
+    $('pauseInfo').innerHTML = `<p class="muted">La partida sigue en marcha para tus compañeros.</p>`;
+    $('quitBtn').textContent = 'Salir de la partida';
+    show('pause');
+    return;
+  }
   if (!game || game.state !== 'play') return;
   game.state = 'paused';
   const g = game;
@@ -236,6 +365,7 @@ function openPause(): void {
     })
     .join('');
   const pas = [...g.passives.entries()].map(([id, l]) => `<tr><td>${PASSIVES[id].name}</td><td>Nv.${l}</td></tr>`).join('');
+  $('quitBtn').textContent = 'Abandonar';
   $('pauseInfo').innerHTML = `
     <p class="muted">${g.arcName}${g.transform ? ` · <b style="color:${g.transform.aura}">${g.transform.name}</b>` : ''}</p>
     <h4>Jutsus</h4><table>${rows}</table>
@@ -256,6 +386,11 @@ function openPause(): void {
 }
 
 function resume(): void {
+  if (net) {
+    if (net.prompt) openNetPrompt(net.prompt);
+    else show(null);
+    return;
+  }
   if (!game || game.state !== 'paused') return;
   game.state = 'play';
   show(null);
@@ -264,6 +399,10 @@ function resume(): void {
 pauseBtn.addEventListener('click', openPause);
 $('resumeBtn').addEventListener('click', resume);
 $('quitBtn').addEventListener('click', () => {
+  if (net) {
+    leaveCoopRun();
+    return;
+  }
   if (!game) return;
   game.state = 'over';
   endRun(false);
@@ -271,52 +410,188 @@ $('quitBtn').addEventListener('click', () => {
 
 // ---------------- game over ----------------
 
-function endRun(win: boolean): void {
-  if (!game) return;
-  const g = game;
-  const r = applyRun(save, g.summary(win));
-  writeSave(save);
-
-  $('overTitle').textContent = win ? '¡Has derrotado a Madara!' : 'Has caído';
-  const bosses = g.bossesDefeated.length ? `<span>Jefes derrotados <b>${g.bossesDefeated.length}</b></span>` : '';
+function showResults(title: string, s: RunSummary, r: RunRewards, coopRun: boolean): void {
+  $('overTitle').textContent = title;
   const notes = [
     ...r.missions.map((m) => `<p>✔ Misión: ${m.text} <b>+${m.reward} 両</b></p>`),
     r.dailyBonus ? `<p>✔ ¡Misiones del día completas! <b>+2 巻</b></p>` : '',
     ...r.achievements.map((a) => `<p>★ Logro: ${a.name} <b>${rewardText(a)}</b></p>`),
   ].join('');
   $('overInfo').innerHTML = `
-    <span>Tiempo <b>${formatTime(g.t)}</b></span>
-    <span>Nivel <b>${g.level}</b></span>
-    <span>Derrotados <b>${g.kills}</b></span>
-    ${bosses}
-    <span>Bijū <b>${g.biju}/9</b></span>
+    <span>Tiempo <b>${formatTime(s.time)}</b></span>
+    <span>Nivel <b>${s.level}</b></span>
+    <span>Derrotados <b>${s.kills}</b></span>
+    ${s.bosses.length ? `<span>Jefes derrotados <b>${s.bosses.length}</b></span>` : ''}
+    <span>Bijū <b>${s.biju}/9</b></span>
     <span>Ryō ganados <b>+${r.ryo}</b></span>
     <span>Pergaminos <b>+${r.tickets}</b></span>
     <span>Ryō totales <b>${save.ryo}</b></span>
     ${notes ? `<div class="over-notes">${notes}</div>` : ''}
-    ${r.unlocked.map((c) => `<p class="unlock-note" style="grid-column:1/-1">¡Nuevo ninja desbloqueado: ${c.name}!</p>`).join('')}`;
+    ${r.unlocked.map((c) => `<p class="unlock-note" style="grid-column:1/-1">¡Nuevo ninja desbloqueado: ${c.name}!</p>`).join('')}
+    ${!online.account ? '<p class="muted small" style="grid-column:1/-1">Entra con una cuenta para aparecer en el ranking.</p>' : ''}`;
+  $('retryBtn').textContent = coopRun ? 'Volver a la sala' : 'Reintentar';
   show('gameover');
 }
 
+function endRun(win: boolean): void {
+  if (!game) return;
+  const s = game.summary(win);
+  const r = applyRun(save, s);
+  writeSave(save);
+  void online.submitRun({ char: s.char, time: Math.floor(s.time), kills: s.kills, bosses: s.bosses.length, level: s.level, win });
+  showResults(win ? '¡Has derrotado a Madara!' : 'Has caído', s, r, false);
+}
+
 $('startBtn').addEventListener('click', startRun);
-$('retryBtn').addEventListener('click', startRun);
+$('retryBtn').addEventListener('click', () => {
+  if (net) {
+    net = null;
+    openCoop();
+  } else startRun();
+});
 $('menuBtn').addEventListener('click', () => {
   game = null;
-  renderMenu();
+  if (net) leaveCoopRun();
+  else renderMenu();
 });
+
+// ---------------- co-op ----------------
+
+let currentRoomCode: string | null = null;
+
+const coopScreen = new CoopScreen($('coopRoot'), {
+  create: (isPublic) => coop.send({ type: 'create', isPublic }),
+  quick: () => coop.send({ type: 'quick' }),
+  join: (code) => coop.send({ type: 'join', code }),
+  refresh: () => coop.send({ type: 'list' }),
+  start: () => coop.send({ type: 'start' }),
+  leave: () => coop.send({ type: 'leave' }),
+  back: () => {
+    coop.send({ type: 'leave' });
+    renderMenu();
+  },
+});
+
+const coop = new CoopClient({
+  onRooms: (rooms) => {
+    if (!coop.room) coopScreen.renderLobby(rooms);
+  },
+  onRoom: (room) => {
+    // Send our ninja once per room we enter (the server echoes room updates back).
+    if (room && room.code !== currentRoomCode) sendChar();
+    currentRoomCode = room?.code ?? null;
+    if (room) {
+      if (!net) coopScreen.renderRoom(room, coop.userId);
+    } else if (!net) coopScreen.renderLobby();
+  },
+  onError: (msg) => coopScreen.setError(msg),
+  onStart: (you) => {
+    game = null;
+    net = new NetGame(you);
+    show(null);
+  },
+  onSnap: (s) => net?.onSnap(s),
+  onPrompt: (p) => {
+    if (!net) return;
+    net.prompt = p;
+    if (p && screens.pause.classList.contains('hidden')) openNetPrompt(p);
+    else if (!p && !screens.levelup.classList.contains('hidden')) show(null);
+  },
+  onOver: (win, summary) => {
+    if (!net) return;
+    net.over = true;
+    const r = applyRun(save, summary);
+    writeSave(save);
+    showResults(win ? '¡Habéis derrotado a Madara!' : 'Habéis caído', summary, r, true);
+  },
+  onClose: () => {
+    if (net && !net.over) {
+      net = null;
+      online.notices.push('Se ha perdido la conexión con la partida cooperativa.');
+      renderMenu();
+    } else if (!screens.coop.classList.contains('hidden')) {
+      coopScreen.setError('Se ha perdido la conexión con el servidor.');
+    }
+  },
+});
+
+/** Tells the room which ninja (and permanent upgrades) you bring. */
+function sendChar(): void {
+  const charId = save.selected as CharacterId;
+  const b = runBonuses(save, charId);
+  coop.send({
+    type: 'char',
+    charId,
+    lookId: skinFor(charId, save.skinSel)?.lookId ?? charId,
+    bonus: { mods: b.mods, xpMult: b.xpMult, rerolls: b.rerolls, extraJutsu: b.extraJutsu },
+  });
+}
+
+async function openCoop(): Promise<void> {
+  if (!online.account || !online.token) {
+    openAuth('Necesitas una cuenta (gratis) para jugar en cooperativo.', () => void openCoop());
+    return;
+  }
+  show('coop');
+  if (coop.room) {
+    coopScreen.renderRoom(coop.room, coop.userId);
+    return;
+  }
+  coopScreen.renderConnecting();
+  try {
+    await coop.connect(online.token);
+    coopScreen.renderLobby([]);
+    coop.send({ type: 'list' });
+  } catch (e) {
+    coopScreen.renderLobby([]);
+    coopScreen.setError((e as Error).message);
+  }
+}
+
+function leaveCoopRun(): void {
+  coop.send({ type: 'leave' });
+  net = null;
+  waitNote.classList.add('hidden');
+  renderMenu();
+}
+
+$('coopBtn').addEventListener('click', () => void openCoop());
+
+// Room list refresh while the lobby is open.
+setInterval(() => {
+  if (!screens.coop.classList.contains('hidden') && !coop.room && coop.connected) coop.send({ type: 'list' });
+}, 4000);
+
+let lastSent = { x: 0, y: 0, at: 0 };
+function sendInput(now: number): void {
+  const a = input.axis();
+  const changed = Math.abs(a.x - lastSent.x) > 0.05 || Math.abs(a.y - lastSent.y) > 0.05;
+  if (changed || now - lastSent.at > 250) {
+    coop.send({ type: 'input', x: Math.round(a.x * 100) / 100, y: Math.round(a.y * 100) / 100 });
+    lastSent = { x: a.x, y: a.y, at: now };
+  }
+}
 
 // ---------------- keyboard routing ----------------
 
 input.onKey = (code) => {
-  if (!game) {
-    if (code === 'Enter') startRun();
-    return;
-  }
-  if (game.state === 'levelup') {
+  const cardsOpen = !screens.levelup.classList.contains('hidden');
+  if (cardsOpen) {
     if (code === 'Digit1' || code === 'Numpad1') pick(0);
     else if (code === 'Digit2' || code === 'Numpad2') pick(1);
     else if (code === 'Digit3' || code === 'Numpad3') pick(2);
     else if (code === 'KeyR') reroll();
+    return;
+  }
+  if (net) {
+    if (code === 'Escape' || code === 'KeyP') {
+      if (screens.pause.classList.contains('hidden')) openPause();
+      else resume();
+    }
+    return;
+  }
+  if (!game) {
+    if (code === 'Enter' && !screens.menu.classList.contains('hidden')) startRun();
     return;
   }
   if (code === 'Escape' || code === 'KeyP') {
@@ -328,7 +603,7 @@ input.onKey = (code) => {
 };
 
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) openPause();
+  if (document.hidden && game) openPause();
 });
 
 // ---------------- main loop ----------------
@@ -341,7 +616,16 @@ let menuT = 0;
 function frame(now: number): void {
   const dt = Math.min(0.25, (now - last) / 1000);
   last = now;
-  if (game) {
+  if (net) {
+    if (!net.over) sendInput(now);
+    net.update(dt, input.axis());
+    const v = net.view();
+    if (v) render(ctx, v, view, input);
+    const others = net.choosing.filter((n) => n !== online.account?.name);
+    const waiting = others.length > 0 && !net.prompt && !net.over;
+    waitNote.classList.toggle('hidden', !waiting);
+    if (waiting) waitNote.textContent = `Esperando a que ${others.join(', ')} elija mejora…`;
+  } else if (game) {
     acc += dt;
     let steps = 0;
     while (acc >= STEP && steps < 5) {
@@ -350,7 +634,7 @@ function frame(now: number): void {
       steps++;
     }
     if (steps === 5) acc = 0;
-    render(ctx, game, view, input);
+    render(ctx, gameView(game), view, input);
   } else {
     // Slowly scrolling field behind the menu.
     menuT += dt;
@@ -364,4 +648,5 @@ function frame(now: number): void {
 }
 
 renderMenu();
+void online.resume();
 requestAnimationFrame(frame);

@@ -6,9 +6,10 @@ import { pull, PITY, RARITY, TICKET_PRICE, type Prize } from '../meta/gacha';
 import { DAILY_BONUS_TICKETS, dailyMissions, ensureDaily, timeToReset } from '../meta/missions';
 import { SKINS } from '../meta/skins';
 import { buyUpgrade, upgradeCost, upgradeLevel, UPGRADES } from '../meta/upgrades';
+import type { Online } from '../net/api';
 import { drawLookDirect } from '../render/sprites';
 
-export type MetaTab = 'mejoras' | 'tienda' | 'pergaminos' | 'misiones' | 'logros';
+export type MetaTab = 'mejoras' | 'tienda' | 'pergaminos' | 'misiones' | 'logros' | 'ranking';
 
 export const TAB_NAMES: Record<MetaTab, string> = {
   mejoras: 'Mejoras',
@@ -16,6 +17,7 @@ export const TAB_NAMES: Record<MetaTab, string> = {
   pergaminos: 'Pergaminos',
   misiones: 'Misiones',
   logros: 'Logros',
+  ranking: 'Ranking',
 };
 
 /** Ryō price to buy a ninja outright instead of meeting its unlock condition. */
@@ -52,7 +54,10 @@ export class MetaScreen {
     private root: HTMLElement,
     /** Called after anything that changes the save (to refresh the menu). */
     private onChange: () => void,
+    private online?: Online,
   ) {}
+
+  rankBoard = 'kills';
 
   open(tab: MetaTab): void {
     this.tab = tab;
@@ -101,6 +106,9 @@ export class MetaScreen {
         break;
       case 'logros':
         this.renderAchievements(body);
+        break;
+      case 'ranking':
+        void this.renderRanking(body);
         break;
     }
   }
@@ -267,6 +275,43 @@ export class MetaScreen {
     }
     list.appendChild(el(`<div class="mission${daily.bonus ? ' done' : ''}"><div><b>Completa las 3 misiones</b><span class="muted">${daily.done.length}/3</span></div><span class="reward">+${DAILY_BONUS_TICKETS} 巻</span></div>`));
     body.appendChild(list);
+  }
+
+  private async renderRanking(body: HTMLElement): Promise<void> {
+    const boards: Record<string, [string, (v: number) => string]> = {
+      kills: ['Bajas', (v) => v.toLocaleString('es')],
+      survival: ['Supervivencia', (v) => `${Math.floor(v / 60)}:${String(v % 60).padStart(2, '0')}`],
+      bosses: ['Jefes', (v) => String(v)],
+    };
+    const tabs = Object.entries(boards)
+      .map(([id, [name]]) => `<button class="tab${id === this.rankBoard ? ' active' : ''}" data-board="${id}">${name}</button>`)
+      .join('');
+    body.innerHTML = `<div class="tabs">${tabs}</div><div class="rank-body"><p class="muted">Cargando…</p></div>`;
+    body.querySelectorAll<HTMLButtonElement>('[data-board]').forEach((b) =>
+      b.addEventListener('click', () => {
+        this.rankBoard = b.dataset.board!;
+        this.render();
+      }),
+    );
+    const out = body.querySelector('.rank-body') as HTMLElement;
+    if (!this.online) return;
+    try {
+      const r = await this.online.ranking(this.rankBoard);
+      if (this.tab !== 'ranking') return;
+      const fmt = boards[this.rankBoard][1];
+      const left = Math.max(0, r.seasonEnds - Date.now());
+      const days = Math.floor(left / 86400000);
+      const hours = Math.floor((left % 86400000) / 3600000);
+      const esc = (t: string) => t.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+      const rows = r.top.map((row) => `<tr class="${row.me ? 'me' : ''}"><td>${row.rank}</td><td>${esc(row.name)}</td><td>${fmt(row.score)}</td></tr>`).join('');
+      const mine = r.me && !r.top.some((x) => x.me) ? `<tr class="me"><td>${r.me.rank}</td><td>${esc(r.me.name)}</td><td>${fmt(r.me.score)}</td></tr>` : '';
+      out.innerHTML = `
+        <p class="muted">Temporada ${r.season} · termina en ${days} d ${hours} h. Al cerrar, el top 100 gana pergaminos (1.º: 10, top 10: 5, top 100: 2).</p>
+        ${rows ? `<table class="rank-table">${rows}${mine}</table>` : '<p class="muted">Aún no hay nadie esta temporada. ¡Sé el primero!</p>'}
+        ${this.online.account ? '' : '<p class="muted small">Inicia sesión para que tus partidas cuenten.</p>'}`;
+    } catch (e) {
+      out.innerHTML = `<p class="coop-error">${(e as Error).message}</p>`;
+    }
   }
 
   private renderAchievements(body: HTMLElement): void {

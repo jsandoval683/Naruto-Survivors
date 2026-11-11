@@ -1,4 +1,5 @@
 import type { Game } from './game';
+import type { Hero } from './hero';
 import type { Nature } from './natures';
 
 export type EnemyKind = 'grunt' | 'puppet' | 'brute' | 'crow' | 'zetsu' | 'boss';
@@ -18,6 +19,8 @@ export interface BossInfo {
 }
 
 export interface Enemy {
+  /** Stable id (used to interpolate enemies in network play). */
+  id: number;
   kind: EnemyKind;
   nature: Nature;
   x: number;
@@ -59,6 +62,7 @@ export interface Projectile {
   dead: boolean;
   angle: number;
   big?: boolean;
+  owner?: Hero;
   onEnd?: (p: Projectile) => void;
 }
 
@@ -100,6 +104,7 @@ export interface Field {
   color: string;
   style: 'shuriken' | 'blackfire' | 'sand';
   dead: boolean;
+  owner?: Hero;
 }
 
 export type PickupKind = 'xp' | 'ryo' | 'ramen' | 'scroll' | 'chest' | 'biju' | 'tenten' | 'pill';

@@ -22,7 +22,7 @@ export function simulate(charId: CharacterId = 'naruto', maxTime = 1500): SimRes
   let over = false;
   let win = false;
   const bot = { axis: () => ({ x: 0, y: 0 }) } as unknown as Input;
-  const g = new Game(bot, { onLevelUp: () => {}, onGameOver: (w) => { over = true; win = w; } }, charId);
+  const g = new Game({ onLevelUp: () => {}, onGameOver: (w: boolean) => { over = true; win = w; } }, [{ name: 'bot', charId, input: bot }]);
 
   bot.axis = () => {
     const p = g.player;

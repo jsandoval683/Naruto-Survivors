@@ -12,7 +12,7 @@ export class Spawner {
     const t = g.t;
     // Enemies per second: gentle first minutes, then accelerating after minute 4.
     const late = t > 240 ? Math.pow((t - 240) / 60, 1.5) * 1.5 : 0;
-    const rate = 0.6 + t / 30 + late;
+    const rate = (0.6 + t / 30 + late) * (1 + 0.4 * g.partyScale);
     this.acc += rate * dt;
     let guard = 0;
     while (this.acc >= 1 && guard++ < 60) {
@@ -21,9 +21,8 @@ export class Spawner {
         this.acc = 0;
         break;
       }
-      const a = Math.random() * Math.PI * 2;
-      const r = g.spawnRadius;
-      g.spawnEnemy(this.pickKind(g), g.player.x + Math.cos(a) * r, g.player.y + Math.sin(a) * r);
+      const pt = g.spawnPoint();
+      g.spawnEnemy(this.pickKind(g), pt.x, pt.y);
     }
 
     // Every minute a ring of fast minions closes in around the player.
@@ -31,10 +30,12 @@ export class Spawner {
       this.nextSwarm += SWARM_EVERY;
       const n = Math.min(60, 12 + Math.floor(t / 15), MAX_ENEMIES + 60 - g.enemies.length);
       const r = g.spawnRadius * 0.8;
+      const alive = g.aliveHeroes;
+      const center = (alive[Math.floor(Math.random() * alive.length)] ?? g.heroes[0]).body;
       const kind: MinionKind = g.scene === 'uchiha' ? 'crow' : g.scene === 'guerra' ? 'zetsu' : 'puppet';
       for (let i = 0; i < n; i++) {
         const a = (i / n) * Math.PI * 2;
-        g.spawnEnemy(kind, g.player.x + Math.cos(a) * r, g.player.y + Math.sin(a) * r);
+        g.spawnEnemy(kind, center.x + Math.cos(a) * r, center.y + Math.sin(a) * r);
       }
       if (!g.banner) g.announce('¡Te están rodeando!');
     }

@@ -72,10 +72,25 @@ export function loadSave(): SaveData {
   }
 }
 
-export function writeSave(data: SaveData): void {
+const listeners: ((data: SaveData) => void)[] = [];
+
+/** Called after every local save (the cloud sync hooks in here). */
+export function onSaveWritten(fn: (data: SaveData) => void): void {
+  listeners.push(fn);
+}
+
+export function writeSave(data: SaveData, notify = true): void {
   try {
     localStorage.setItem(KEY, JSON.stringify(data));
   } catch {
     // Storage blocked (private mode): progress just won't persist.
   }
+  if (notify) for (const fn of listeners) fn(data);
+}
+
+/** Replaces the contents of `target` in place (other modules keep their reference). */
+export function replaceSave(target: SaveData, source: Partial<SaveData>): void {
+  const fresh = { ...structuredClone(DEFAULT), ...source };
+  for (const k of Object.keys(target)) delete (target as unknown as Record<string, unknown>)[k];
+  Object.assign(target, fresh);
 }

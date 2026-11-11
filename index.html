@@ -10,25 +10,49 @@
   <body>
     <canvas id="game"></canvas>
     <button id="pauseBtn" class="hidden" aria-label="Pausa">❚❚</button>
+    <div id="waitNote" class="wait-note hidden"></div>
 
     <section id="menu" class="screen">
       <div class="panel menu-panel">
         <h1>NARUTO<span>SHIPPUDEN SURVIVORS</span></h1>
         <p class="fan">Juego de fans no oficial · prototipo</p>
+        <div id="accountLine" class="account-line"></div>
         <div id="menuWallet" class="wallet center"></div>
+        <div id="notices"></div>
         <div id="charGrid" class="char-grid"></div>
         <div id="charInfo" class="hero-info"></div>
         <button id="startBtn" class="primary">¡A luchar!</button>
+        <button id="coopBtn" class="secondary wide">Jugar en cooperativo</button>
         <div id="menuNav" class="menu-nav">
           <button class="secondary" data-tab="mejoras">Mejoras</button>
           <button class="secondary" data-tab="tienda">Tienda</button>
           <button class="secondary" data-tab="pergaminos">Pergaminos</button>
           <button class="secondary" data-tab="misiones">Misiones</button>
           <button class="secondary" data-tab="logros">Logros</button>
+          <button class="secondary" data-tab="ranking">Ranking</button>
         </div>
         <div id="menuStats" class="stats"></div>
         <p class="muted small">WASD / flechas para moverte · los jutsus atacan solos · Esc pausa<br />En móvil: arrastra el dedo en cualquier parte</p>
       </div>
+    </section>
+
+    <section id="auth" class="screen hidden">
+      <div class="panel auth-panel">
+        <h2 id="authTitle">Entrar</h2>
+        <p id="authNote" class="muted small">Con una cuenta tu progreso se guarda en la nube, apareces en el ranking y puedes jugar en cooperativo.</p>
+        <form id="authForm">
+          <input id="authName" placeholder="Nombre" autocomplete="username" maxlength="16" />
+          <input id="authPass" type="password" placeholder="Contraseña" autocomplete="current-password" />
+          <p id="authError" class="coop-error"></p>
+          <button class="primary" type="submit" id="authSubmit">Entrar</button>
+        </form>
+        <p class="small"><a href="#" id="authSwitch">¿No tienes cuenta? Créala</a></p>
+        <button id="authBack" class="secondary meta-back">Volver</button>
+      </div>
+    </section>
+
+    <section id="coop" class="screen hidden">
+      <div class="panel coop-panel" id="coopRoot"></div>
     </section>
 
     <section id="meta" class="screen hidden">
