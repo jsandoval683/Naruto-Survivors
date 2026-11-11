@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="theme-color" content="#0b1020" />
+    <title>Naruto Shippuden Survivors</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <button id="pauseBtn" class="hidden" aria-label="Pausa">❚❚</button>
+
+    <section id="menu" class="screen">
+      <div class="panel menu-panel">
+        <h1>NARUTO<span>SHIPPUDEN SURVIVORS</span></h1>
+        <p class="fan">Juego de fans no oficial · prototipo</p>
+        <div id="menuWallet" class="wallet center"></div>
+        <div id="charGrid" class="char-grid"></div>
+        <div id="charInfo" class="hero-info"></div>
+        <button id="startBtn" class="primary">¡A luchar!</button>
+        <div id="menuNav" class="menu-nav">
+          <button class="secondary" data-tab="mejoras">Mejoras</button>
+          <button class="secondary" data-tab="tienda">Tienda</button>
+          <button class="secondary" data-tab="pergaminos">Pergaminos</button>
+          <button class="secondary" data-tab="misiones">Misiones</button>
+          <button class="secondary" data-tab="logros">Logros</button>
+        </div>
+        <div id="menuStats" class="stats"></div>
+        <p class="muted small">WASD / flechas para moverte · los jutsus atacan solos · Esc pausa<br />En móvil: arrastra el dedo en cualquier parte</p>
+      </div>
+    </section>
+
+    <section id="meta" class="screen hidden">
+      <div class="panel meta-panel">
+        <div id="metaRoot"></div>
+        <button id="metaBack" class="secondary meta-back">Volver</button>
+      </div>
+    </section>
+
+    <section id="levelup" class="screen hidden">
+      <div class="levelup-wrap">
+        <h2 id="levelTitle">¡Nivel 2!</h2>
+        <p class="muted" id="levelSub">Elige una mejora · 1 2 3</p>
+        <div id="cards" class="cards"></div>
+        <button id="rerollBtn" class="secondary">Volver a elegir (2) · R</button>
+      </div>
+    </section>
+
+    <section id="pause" class="screen hidden">
+      <div class="panel">
+        <h2>Pausa</h2>
+        <div id="pauseInfo"></div>
+        <div class="row">
+          <button id="resumeBtn" class="primary">Continuar</button>
+          <button id="quitBtn" class="secondary">Abandonar</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="gameover" class="screen hidden">
+      <div class="panel">
+        <h2 id="overTitle">Has caído</h2>
+        <div id="overInfo" class="stats big"></div>
+        <div class="row">
+          <button id="retryBtn" class="primary">Reintentar</button>
+          <button id="menuBtn" class="secondary">Menú</button>
+        </div>
+      </div>
+    </section>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
