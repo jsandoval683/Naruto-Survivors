@@ -2,7 +2,7 @@ import type { Game } from './game';
 import type { Hero } from './hero';
 import type { Nature } from './natures';
 
-export type EnemyKind = 'grunt' | 'puppet' | 'brute' | 'crow' | 'zetsu' | 'boss';
+export type EnemyKind = 'grunt' | 'puppet' | 'brute' | 'crow' | 'zetsu' | 'snake' | 'sound' | 'shark' | 'boss';
 
 export interface BossBrain {
   update(g: Game, e: Enemy, dt: number): void;
@@ -38,6 +38,10 @@ export interface Enemy {
   kbx: number;
   kby: number;
   dead: boolean;
+  /** Seconds left held in place (Shikamaru's shadow, Tsukuyomi). */
+  stun?: number;
+  /** Ranged minions: seconds until the next shot. */
+  shootCd?: number;
   /** Overrides chasing when set (bosses use it for dashes/kiting). */
   vx?: number;
   vy?: number;
@@ -45,7 +49,7 @@ export interface Enemy {
 }
 
 export interface Projectile {
-  kind: 'kunai' | 'rasengan' | 'fireball';
+  kind: 'kunai' | 'rasengan' | 'fireball' | 'lion' | 'crow';
   src: string;
   x: number;
   y: number;
@@ -62,6 +66,8 @@ export interface Projectile {
   dead: boolean;
   angle: number;
   big?: boolean;
+  /** Turn rate toward the nearest enemy (rad/s). */
+  homing?: number;
   owner?: Hero;
   onEnd?: (p: Projectile) => void;
 }
@@ -89,6 +95,8 @@ export interface Hazard {
   linger?: number;
   /** zone: push the player away from the center when it detonates. */
   push?: number;
+  /** zone: slows the player (seconds) when it detonates on them. */
+  slow?: number;
 }
 
 /** Player-owned damage areas (Rasen-shuriken, Amaterasu, sand). */
@@ -102,7 +110,7 @@ export interface Field {
   dmg: number;
   src: string;
   color: string;
-  style: 'shuriken' | 'blackfire' | 'sand';
+  style: 'shuriken' | 'blackfire' | 'sand' | 'fire';
   dead: boolean;
   owner?: Hero;
 }
@@ -120,7 +128,7 @@ export interface Pickup {
 }
 
 export interface Effect {
-  kind: 'boom' | 'puff' | 'ring' | 'bolt' | 'flash';
+  kind: 'boom' | 'puff' | 'ring' | 'bolt' | 'flash' | 'drop' | 'toad' | 'shadow';
   x: number;
   y: number;
   r: number;

@@ -279,8 +279,27 @@ function buildCharacter(L: Look, frame: WalkFrame, plate: string | null): Grid {
       for (let x = bx0; x <= bx1; x += 2) set(g, x, 19, '#e5534b');
       break;
     case 'kakashi':
+    case 'shikamaru':
       rect(g, 7, 16, 8, 17, shade(top, 0.75));
       rect(g, 11, 16, 12, 17, shade(top, 0.75));
+      break;
+    case 'minato':
+      // White coat with a flame hem over a jōnin vest.
+      rect(g, 9, 14, 10, 20, '#4f6b3a');
+      for (let x = bx0; x <= bx1; x++) set(g, x, 21, x % 2 ? '#e8701f' : '#e5534b');
+      break;
+    case 'jiraiya':
+      rect(g, bx0, 14, bx0 + 1, 21, '#c0392b');
+      rect(g, bx1 - 1, 14, bx1, 21, '#c0392b');
+      break;
+    case 'sound':
+      set(g, 7, 16, shade(top, 0.75));
+      set(g, 11, 18, shade(top, 0.75));
+      set(g, 12, 15, shade(top, 0.75));
+      break;
+    case 'orochimaru':
+    case 'kabuto':
+      rect(g, bx0, 19, bx1, 19, '#6b3fa0');
       break;
     case 'sasuke':
       rect(g, bx0, 19, bx1, 19, '#6b3fa0');
@@ -335,6 +354,18 @@ function buildCharacter(L: Look, frame: WalkFrame, plate: string | null): Grid {
     rect(g, 8, 9, 9, 9, '#111');
     rect(g, 12, 9, 13, 9, '#111');
   }
+  if (L.extra === 'gills') {
+    const c = shade(skin, 0.6);
+    set(g, 7, 11, c);
+    set(g, 7, 12, c);
+    set(g, 13, 11, c);
+    set(g, 13, 12, c);
+  }
+  if (L.extra === 'facepaint') {
+    const c = L.id === 'orochimaru' ? '#7a4aa0' : '#c0392b';
+    rect(g, eyeL - 1, 11, eyeL - 1, 13, c);
+    rect(g, eyeR, 11, eyeR, 13, c);
+  }
   if (L.extra === 'piercings') {
     set(g, 10, 11, '#9aa0a8');
     set(g, 8, 12, '#9aa0a8');
@@ -352,6 +383,12 @@ function buildCharacter(L: Look, frame: WalkFrame, plate: string | null): Grid {
     if (L.id === 'kakashi') rect(g, 8, 8, 10, 10, L.band); // covers the Sharingan eye
   }
   if (L.id === 'deidara') rect(g, eyeR - 1, 9, eyeR, 10, L.hair); // fringe hides one eye
+  if (L.extra === 'glasses') {
+    const c = '#c9d1d9';
+    rect(g, eyeL - 1, 9, eyeL, 9, c);
+    rect(g, eyeR - 1, 9, eyeR, 9, c);
+    set(g, eyeL + 1, 10, c);
+  }
   return g;
 }
 
@@ -629,3 +666,84 @@ export function headSprite(L: Look): HTMLCanvasElement {
     return c;
   });
 }
+
+// ---------------- added: snakes, lions, toad ----------------
+
+export function snakeSprite(frame: 0 | 1, white = false): HTMLCanvasElement {
+  return cached(`snake:${frame}:${white}`, () => {
+    const rows =
+      frame === 0
+        ? ['.........oo.', '........ogyo', '.oo....oggo.', 'oggo..oggo..', 'ogggoogggo..', '.oggggggo...', '..oooooo....']
+        : ['.........oo.', '.oo.....ogyo', 'oggo...oggo.', 'ogggo.oggo..', '.ogggggggo..', '..oggggoo...', '...oooo.....'];
+    const c = fromRows(rows, { o: OUTLINE, g: '#7a6ab0', y: '#ffe14d' });
+    return white ? whiten(c) : c;
+  });
+}
+
+export function lionSprite(frame: number): HTMLCanvasElement {
+  return cached(`lion:${frame % 2}`, () => {
+    const g = grid(15, 13);
+    disc(g, 7, 7, 5.5, '#6a4ab8');
+    disc(g, 7, 7, 4, '#b48cff');
+    disc(g, 8, 6, 2, '#e8dcff');
+    // Ears and mane flicker.
+    set(g, 3, 1, '#b48cff');
+    set(g, 4, 2, '#b48cff');
+    set(g, 11, 1, '#b48cff');
+    set(g, 10, 2, '#b48cff');
+    set(g, frame % 2 ? 0 : 1, 7, '#b48cff');
+    set(g, frame % 2 ? 14 : 13, 7, '#b48cff');
+    set(g, 6, 7, '#2d2a5a');
+    set(g, 9, 7, '#2d2a5a');
+    return toCanvas(outline(g, '#2d1a5a'));
+  });
+}
+
+export function toadSprite(): HTMLCanvasElement {
+  return cached('toad', () =>
+    toCanvas(
+      outline(
+        shadeEdges(
+          iconFromRows(
+            [
+              '...ww.......ww...',
+              '..wkkw.....wkkw..',
+              '..wkkw.....wkkw..',
+              '.ooooooooooooooo.',
+              'oooooooooooooooo.',
+              'ooyyyyyyyyyyyyooo',
+              'ooooooooooooooooo',
+              'oorrrrrrrrrrrrroo',
+              'ooooooooooooooooo',
+              '.ooooodooodoooo..',
+              '..oooo.....oooo..',
+              '.hhhh.......hhhh.',
+            ],
+            { w: '#f4f1ea', k: '#1a1a1a', o: '#d9601e', y: '#f4c06a', r: '#7a1f1f', d: '#a8481a', h: '#a8481a' },
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+Object.assign(ICON_ROWS, {
+  sombra: () =>
+    iconFromRows(['.....oo.....', '....oddo....', '....oddo....', '...oddddo...', '...oddddo...', '..odddddo...', '..odddddddo.', '.odddddddddo', 'oddddd.dddo.', '.ooddd..oo..', '...odo......', '....o.......'], { o: '#0e0a14', d: '#4a3a6a' }),
+  kaiten: () => {
+    const g = grid(12, 12);
+    disc(g, 5.5, 5.5, 5.4, '#cfeeff');
+    disc(g, 5.5, 5.5, 4, '#7fd0ff');
+    disc(g, 5.5, 5.5, 2.4, '#e8f6ff');
+    for (let i = 0; i < 6; i++) set(g, Math.round(5.5 + Math.cos(i) * 4.6), Math.round(5.5 + Math.sin(i) * 4.6), '#ffffff');
+    return g;
+  },
+  leones: () =>
+    iconFromRows(['.o......o...', 'obo....obo..', 'obbooooobbo.', 'obbbbbbbbbo.', 'obkbbbbkbbo.', 'obbbbbbbbbo.', '.obbwwbbbo..', '.obbbbbbbo..', '..obbbbbo...', '...ooooo....'], { o: '#2d1a5a', b: '#b48cff', k: '#2d2a5a', w: '#e8dcff' }),
+  sapo: () =>
+    iconFromRows(['.ww....ww...', 'wkkw..wkkw..', 'wkkw..wkkw..', 'oooooooooooo', 'ooyyyyyyyyoo', 'oooooooooooo', 'oorrrrrrrroo', '.oooooooooo.', '.hh......hh.'], { w: '#f4f1ea', k: '#1a1a1a', o: '#d9601e', y: '#f4c06a', r: '#7a1f1f', h: '#a8481a' }),
+  cuervos: () =>
+    iconFromRows(['a..........a', 'ab........ba', '.abb.aa.bba.', '..abbbbbba..', '...abrbby...', '....abba....', '.....aa.....'], { a: '#121218', b: '#2a2a36', r: '#e01b1b', y: '#e8b923' }),
+  hiraishin: () =>
+    iconFromRows(['..........yy', '.........yky', '........yky.', '...y...yky..', '..yky.yky...', '.ykkykkky...', '..yky.yy....', '.ohho.......', 'ohhho.......', 'oho.........', 'oo..........'], { y: '#ffe14d', k: '#ffffff', o: '#20232a', h: '#3a3f47' }),
+});

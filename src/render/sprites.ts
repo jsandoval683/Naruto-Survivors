@@ -2,7 +2,7 @@ import type { Look } from '../game/looks';
 import { LOOKS } from '../game/looks';
 import { NATURE_COLOR } from '../game/natures';
 import type { EnemyView } from '../game/view';
-import { characterSize, characterSprite, crowSprite, type WalkFrame } from './pixel';
+import { characterSize, characterSprite, crowSprite, snakeSprite, type WalkFrame } from './pixel';
 
 export function shadow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number): void {
   ctx.fillStyle = 'rgba(0,0,0,0.28)';
@@ -46,7 +46,7 @@ export function drawLookDirect(ctx: CanvasRenderingContext2D, L: Look, x: number
   ctx.drawImage(img, Math.round(x - w / 2), Math.round(y + r * 0.95 - h), w, h);
 }
 
-const MINION_LOOK: Record<string, string> = { grunt: 'renegade', brute: 'brute', zetsu: 'zetsu', puppet: 'puppet' };
+const MINION_LOOK: Record<string, string> = { grunt: 'renegade', brute: 'brute', zetsu: 'zetsu', puppet: 'puppet', sound: 'sound', shark: 'sharkman' };
 
 /** Minions: little pixel ninjas (headband plate in their nature colour), puppets, Zetsu and crows. */
 export function drawMinion(ctx: CanvasRenderingContext2D, e: EnemyView, t: number, faceLeft: boolean): void {
@@ -61,6 +61,17 @@ export function drawMinion(ctx: CanvasRenderingContext2D, e: EnemyView, t: numbe
     ctx.ellipse(e.x, e.y + e.r * 1.4, e.r * 0.7, e.r * 0.25, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.translate(e.x, e.y - 3 + Math.sin(t * 8 + e.id) * 2);
+    if (faceLeft) ctx.scale(-1, 1);
+    ctx.drawImage(img, (-img.width * px) / 2, (-img.height * px) / 2, img.width * px, img.height * px);
+    ctx.restore();
+    return;
+  }
+  if (e.kind === 'snake') {
+    const img = snakeSprite(Math.floor(t * 8 + e.id) % 2 === 0 ? 0 : 1, white);
+    const px = (e.r * 2.8) / img.width;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.translate(e.x, e.y);
     if (faceLeft) ctx.scale(-1, 1);
     ctx.drawImage(img, (-img.width * px) / 2, (-img.height * px) / 2, img.width * px, img.height * px);
     ctx.restore();

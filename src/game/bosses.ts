@@ -5,7 +5,8 @@ import type { BossBrain, Enemy } from './types';
 export type BossId =
   | 'deidara' | 'sasori' | 'hidan' | 'kakuzu' | 'itachi'
   | 'path0' | 'path1' | 'path2' | 'path3' | 'path4' | 'path5'
-  | 'pain' | 'raikage' | 'tsuchikage' | 'mizukage' | 'madara';
+  | 'pain' | 'raikage' | 'tsuchikage' | 'mizukage' | 'madara'
+  | 'orochimaru' | 'kisame' | 'konan' | 'kabuto';
 
 export interface BossDef {
   name: string;
@@ -67,7 +68,7 @@ function radial(g: Game, e: Enemy, n: number, speed: number, dmg: number, color:
   for (let i = 0; i < n; i++) g.bullet(e.x, e.y, off + (i / n) * Math.PI * 2, speed, dmg, color);
 }
 
-function summon(g: Game, e: Enemy, kind: 'puppet' | 'crow' | 'brute' | 'zetsu', n: number, radius: number, aroundPlayer = false): void {
+function summon(g: Game, e: Enemy, kind: 'puppet' | 'crow' | 'brute' | 'zetsu' | 'snake' | 'sound', n: number, radius: number, aroundPlayer = false): void {
   const cx = aroundPlayer ? g.player.x : e.x;
   const cy = aroundPlayer ? g.player.y : e.y;
   for (let i = 0; i < n; i++) {
@@ -368,6 +369,82 @@ const madara = (): BossBrain => {
   };
 };
 
+const orochimaru = (): BossBrain => {
+  const snakes = new Every(3, 1.5);
+  const kusanagi = new Every(5, 3);
+  let shed = false;
+  return {
+    update(g, e, dt) {
+      kite(g, e, 200);
+      if (snakes.tick(dt)) summon(g, e, 'snake', 4, 40);
+      if (kusanagi.tick(dt)) {
+        // Kusanagi blade lunges out along a line.
+        const { a } = toPlayer(g, e);
+        for (let i = 1; i <= 6; i++) g.zone(e.x + Math.cos(a) * i * 45, e.y + Math.sin(a) * i * 45, 26, 0.7, 20, '#c9d1d9');
+      }
+      if (!shed && e.hp < e.maxHp / 2) {
+        shed = true;
+        e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.25);
+        g.puff(e.x, e.y, '#e8e4f0', 40);
+        g.announce('¡Orochimaru muda de piel!', 'Recupera vida');
+      }
+    },
+  };
+};
+
+const kisame = (): BossBrain => {
+  const sharks = new Every(4, 2);
+  const prison = new Every(9, 6);
+  const samehada = new Every(6, 6);
+  return {
+    update(g, e, dt) {
+      chase(g, e);
+      if (sharks.tick(dt)) fan(g, e, 5, 0.9, 200, 11, '#4fa8ff', { homing: 0.6, life: 3, r: 7 });
+      if (prison.tick(dt)) {
+        g.zone(g.player.x, g.player.y, 60, 1, 14, '#4fa8ff', { slow: 2 });
+        g.announce('¡Prisión de agua!', 'Te ralentiza si te atrapa');
+      }
+      // Samehada drains chakra from whoever is close.
+      if (samehada.tick(dt) && toPlayer(g, e).d < 70) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.04);
+    },
+  };
+};
+
+const konan = (): BossBrain => {
+  const butterflies = new Every(2.5, 1.5);
+  const bombs = new Every(8, 5);
+  return {
+    update(g, e, dt) {
+      kite(g, e, 220);
+      if (butterflies.tick(dt)) radial(g, e, 12, 150, 8, '#f4f1ea');
+      if (bombs.tick(dt)) {
+        g.announce('¡Bombas de papel!');
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * Math.PI * 2 + Math.random();
+          g.zone(g.player.x + Math.cos(a) * 70, g.player.y + Math.sin(a) * 70, 55, 1.2, 18, '#f4f1ea');
+        }
+      }
+    },
+  };
+};
+
+const kabuto = (): BossBrain => {
+  const army = new Every(4, 2);
+  const heal = new Every(7, 7);
+  const snakes = new Every(5, 3);
+  return {
+    update(g, e, dt) {
+      chase(g, e);
+      if (army.tick(dt)) summon(g, e, 'sound', 3, 50);
+      if (heal.tick(dt)) {
+        e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.05);
+        g.effects.push({ kind: 'ring', x: e.x, y: e.y, r: 60, life: 0.5, max: 0.5, color: '#5cc96b' });
+      }
+      if (snakes.tick(dt)) fan(g, e, 4, 1.2, 170, 12, '#7ad35a', { homing: 1, life: 3 });
+    },
+  };
+};
+
 export const BOSSES: Record<BossId, BossDef> = {
   deidara: { name: 'Deidara', lookId: 'deidara', hp: 1100, speed: 70, r: 22, dmg: 12, nature: 'tierra', brain: deidara },
   sasori: { name: 'Sasori', lookId: 'sasori', hp: 2400, speed: 55, r: 22, dmg: 14, nature: 'viento', brain: sasori },
@@ -384,5 +461,9 @@ export const BOSSES: Record<BossId, BossDef> = {
   raikage: { name: 'Raikage (Edo Tensei)', lookId: 'raikage', hp: 16000, speed: 95, r: 26, dmg: 24, nature: 'rayo', brain: raikage },
   tsuchikage: { name: 'Tsuchikage (Edo Tensei)', lookId: 'tsuchikage', hp: 16000, speed: 55, r: 20, dmg: 24, nature: 'tierra', brain: tsuchikage },
   mizukage: { name: 'Mizukage (Edo Tensei)', lookId: 'mizukage', hp: 16000, speed: 60, r: 22, dmg: 24, nature: 'agua', brain: mizukage },
+  orochimaru: { name: 'Orochimaru', lookId: 'orochimaru', hp: 4500, speed: 65, r: 22, dmg: 16, nature: 'viento', brain: orochimaru },
+  kisame: { name: 'Kisame', lookId: 'kisame', hp: 10000, speed: 70, r: 24, dmg: 18, nature: 'agua', brain: kisame },
+  konan: { name: 'Konan', lookId: 'konan', hp: 12000, speed: 65, r: 21, dmg: 18, nature: 'viento', brain: konan },
+  kabuto: { name: 'Kabuto', lookId: 'kabuto', hp: 20000, speed: 65, r: 22, dmg: 22, nature: 'agua', brain: kabuto },
   madara: { name: 'Madara Uchiha', lookId: 'madara', hp: 120000, speed: 70, r: 28, dmg: 30, nature: 'fuego', final: true, brain: madara },
 };

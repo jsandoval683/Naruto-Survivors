@@ -19,6 +19,8 @@ export function isUnlockedByProgress(c: CharacterDef, s: SaveData): boolean {
   switch (u.kind) {
     case 'start':
       return true;
+    case 'shop':
+      return false;
     case 'boss':
       return s.bossesDefeated.includes(u.boss);
     case 'survive':

@@ -22,10 +22,11 @@ export interface Transform {
   mods: StatMods;
 }
 
-export type CharacterId = 'naruto' | 'sakura' | 'kakashi' | 'gaara' | 'lee' | 'sasuke';
+export type CharacterId = 'naruto' | 'sakura' | 'kakashi' | 'gaara' | 'lee' | 'sasuke' | 'shikamaru' | 'neji' | 'hinata' | 'jiraiya' | 'itachi' | 'minato';
 
 export type Unlock =
   | { kind: 'start' }
+  | { kind: 'shop' }
   | { kind: 'boss'; boss: string }
   | { kind: 'survive'; seconds: number }
   | { kind: 'kills'; total: number };
@@ -133,6 +134,96 @@ export const CHARACTERS: Record<CharacterId, CharacterDef> = {
     unlock: { kind: 'boss', boss: 'itachi' },
     unlockText: 'Derrota a Itachi',
   },
+  shikamaru: {
+    id: 'shikamaru',
+    name: 'Shikamaru',
+    nature: 'tierra',
+    trait: 'Estratega: -10% de recarga y +10% de área.',
+    start: 'sombra',
+    pool: ['sombra', 'kunai', 'sellos', 'katon'],
+    mods: { cd: 0.9, area: 1.1 },
+    transforms: [
+      { level: 12, name: 'Plan maestro', desc: '+25% de área y -15% de recarga', aura: '#6b5a8a', mods: { area: 1.25, cd: 0.85 } },
+      { level: 24, name: 'Sombra de la Hoja', desc: '+30% de daño y +15% de recarga', aura: '#3a2a5a', mods: { dmg: 1.3, cd: 0.85 } },
+    ],
+    unlock: { kind: 'boss', boss: 'hidan' },
+    unlockText: 'Derrota a Hidan',
+  },
+  neji: {
+    id: 'neji',
+    name: 'Neji',
+    nature: 'neutral',
+    trait: 'Byakugan: +8% de crítico y +10% de daño.',
+    start: 'kaiten',
+    pool: ['kaiten', 'kunai', 'sellos', 'huracan'],
+    mods: { crit: 0.08, dmg: 1.1 },
+    transforms: [
+      { level: 12, name: 'Byakugan', desc: '+10% de crítico y +20% de daño', aura: '#e8e4f0', mods: { crit: 0.1, dmg: 1.2 } },
+      { level: 24, name: 'Ocho trigramas', desc: '+30% de daño y -15% de recarga', aura: '#bfe8ff', mods: { dmg: 1.3, cd: 0.85 } },
+    ],
+    unlock: { kind: 'survive', seconds: 720 },
+    unlockText: 'Sobrevive 12 minutos',
+  },
+  hinata: {
+    id: 'hinata',
+    name: 'Hinata',
+    nature: 'fuego',
+    trait: 'Corazón amable: +0,6 vida/s y +10 de vida.',
+    start: 'leones',
+    pool: ['leones', 'kaiten', 'kunai', 'sellos'],
+    mods: { regen: 0.6, maxHp: 10 },
+    transforms: [
+      { level: 12, name: 'Byakugan', desc: '+20% de daño y +1 vida/s', aura: '#e8e4f0', mods: { dmg: 1.2, regen: 1 } },
+      { level: 24, name: 'Chakra de león gemelo', desc: '+30% de daño y +15% de área', aura: '#b48cff', mods: { dmg: 1.3, area: 1.15 } },
+    ],
+    unlock: { kind: 'boss', boss: 'pain' },
+    unlockText: 'Derrota a Pain',
+  },
+  jiraiya: {
+    id: 'jiraiya',
+    name: 'Jiraiya',
+    nature: 'fuego',
+    trait: 'Sannin legendario: +30 de vida, -5% de velocidad.',
+    start: 'sapo',
+    pool: ['sapo', 'rasengan', 'katon', 'sellos', 'kunai'],
+    mods: { maxHp: 30, speed: 0.95 },
+    transforms: [
+      { level: 12, name: 'Modo Sabio', desc: '+25% de daño y +20% de área', aura: '#f39c32', mods: { dmg: 1.25, area: 1.2 } },
+      { level: 24, name: 'Sabio de los sapos', desc: '+30% de daño y -15% de recarga', aura: '#e8701f', mods: { dmg: 1.3, cd: 0.85 } },
+    ],
+    unlock: { kind: 'kills', total: 10000 },
+    unlockText: 'Derrota a 10.000 enemigos en total',
+  },
+  itachi: {
+    id: 'itachi',
+    name: 'Itachi',
+    nature: 'fuego',
+    trait: 'Genio Uchiha: +8% de crítico, -10 de vida.',
+    start: 'cuervos',
+    pool: ['cuervos', 'katon', 'kunai', 'clones', 'sellos'],
+    mods: { crit: 0.08, maxHp: -10 },
+    transforms: [
+      { level: 12, name: 'Mangekyō Sharingan', desc: '+25% de daño y +5% de crítico', aura: '#e01b1b', mods: { dmg: 1.25, crit: 0.05 } },
+      { level: 24, name: 'Susanoo', desc: '-25% de daño recibido y +20% de daño', aura: '#e05a3a', mods: { armor: 0.25, dmg: 1.2 } },
+    ],
+    unlock: { kind: 'boss', boss: 'madara' },
+    unlockText: 'Derrota a Madara',
+  },
+  minato: {
+    id: 'minato',
+    name: 'Minato',
+    nature: 'viento',
+    trait: 'Destello amarillo: +20% de velocidad.',
+    start: 'hiraishin',
+    pool: ['hiraishin', 'rasengan', 'kunai', 'sellos'],
+    mods: { speed: 1.2 },
+    transforms: [
+      { level: 12, name: 'Modo Sabio', desc: '+25% de daño y +15% de área', aura: '#f39c32', mods: { dmg: 1.25, area: 1.15 } },
+      { level: 24, name: 'Modo Chakra Kyūbi', desc: '+30% de daño y -20% de recarga', aura: '#ffd23f', mods: { dmg: 1.3, cd: 0.8 } },
+    ],
+    unlock: { kind: 'shop' },
+    unlockText: 'Solo en la Tienda o en los pergaminos',
+  },
 };
 
-export const CHARACTER_ORDER: CharacterId[] = ['naruto', 'sakura', 'kakashi', 'gaara', 'lee', 'sasuke'];
+export const CHARACTER_ORDER: CharacterId[] = ['naruto', 'sakura', 'kakashi', 'gaara', 'lee', 'sasuke', 'shikamaru', 'neji', 'hinata', 'jiraiya', 'itachi', 'minato'];

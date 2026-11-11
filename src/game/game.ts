@@ -471,6 +471,7 @@ export class Game {
       kbx: 0,
       kby: 0,
       dead: false,
+      shootCd: d.ranged ? 1 + Math.random() * d.ranged.cd : undefined,
       boss: null,
     });
   }
@@ -525,7 +526,7 @@ export class Game {
   }
 
   /** Telegraphed ground attack: fills up for `delay` seconds, then hits whoever stands inside. */
-  zone(x: number, y: number, r: number, delay: number, dmg: number, color: string, extra: { linger?: number; push?: number } = {}): void {
+  zone(x: number, y: number, r: number, delay: number, dmg: number, color: string, extra: { linger?: number; push?: number; slow?: number } = {}): void {
     this.hazards.push({ kind: 'zone', x, y, vx: 0, vy: 0, r, dmg, life: delay + (extra.linger ?? 0), color, dead: false, delay, maxDelay: delay, ...extra });
   }
 
@@ -849,6 +850,28 @@ export class Game {
       let vx = e.boss ? e.vx ?? 0 : (dx / d) * e.speed;
       let vy = e.boss ? e.vy ?? 0 : (dy / d) * e.speed;
 
+      // Ranged minions hold their distance and shoot.
+      const ranged = !e.boss ? ENEMIES[e.kind as MinionKind].ranged : undefined;
+      if (ranged && target.alive) {
+        if (d < ranged.range) {
+          vx = (-dy / d) * e.speed * 0.4;
+          vy = (dx / d) * e.speed * 0.4;
+        }
+        e.shootCd = (e.shootCd ?? ranged.cd) - dt;
+        if (e.shootCd <= 0 && d < ranged.range * 1.6) {
+          e.shootCd = ranged.cd;
+          this.bullet(e.x, e.y, Math.atan2(dy, dx), ranged.speed, ranged.dmg, ranged.color, { r: 5 });
+        }
+      }
+
+      // Held by a shadow / genjutsu: no movement (bosses only slow down).
+      if (e.stun && e.stun > 0) {
+        e.stun -= dt;
+        const k = e.boss ? 0.35 : 0;
+        vx *= k;
+        vy *= k;
+      }
+
       if (!e.boss) {
         // Cheap separation so the horde doesn't collapse into one point.
         this.near.length = 0;
@@ -887,6 +910,21 @@ export class Game {
       if (pr.dead) continue;
       const owner = pr.owner ?? this.heroes[0];
       this.withActor(owner, () => {
+        if (pr.homing) {
+          const t = this.nearestEnemy(pr.x, pr.y, 320);
+          if (t) {
+            const want = Math.atan2(t.y - pr.y, t.x - pr.x);
+            const cur = Math.atan2(pr.vy, pr.vx);
+            let diff = want - cur;
+            while (diff > Math.PI) diff -= Math.PI * 2;
+            while (diff < -Math.PI) diff += Math.PI * 2;
+            const turn = Math.max(-pr.homing * dt, Math.min(pr.homing * dt, diff));
+            const sp = Math.hypot(pr.vx, pr.vy);
+            pr.vx = Math.cos(cur + turn) * sp;
+            pr.vy = Math.sin(cur + turn) * sp;
+            pr.angle = cur + turn;
+          }
+        }
         pr.x += pr.vx * dt;
         pr.y += pr.vy * dt;
         pr.life -= dt;
@@ -968,6 +1006,7 @@ export class Game {
               const p = hero.body;
               if (Math.hypot(p.x - h.x, p.y - h.y) >= h.r + p.r * 0.5) continue;
               this.hurtHero(hero, h.dmg, 'zona');
+              if (h.slow) p.slow = Math.max(p.slow, h.slow);
               if (h.push) {
                 const dx = p.x - h.x;
                 const dy = p.y - h.y;

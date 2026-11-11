@@ -27,6 +27,12 @@ export const NINJA_PRICES: Partial<Record<CharacterId, number>> = {
   gaara: 2500,
   lee: 2500,
   sasuke: 4000,
+  shikamaru: 3000,
+  neji: 3000,
+  hinata: 3500,
+  jiraiya: 4500,
+  itachi: 6000,
+  minato: 6000,
 };
 
 function el(html: string): HTMLElement {

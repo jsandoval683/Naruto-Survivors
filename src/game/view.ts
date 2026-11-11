@@ -4,7 +4,7 @@ import { ArenaWeapon, ClonesWeapon, JUTSUS, SellosWeapon } from './jutsus';
 import { PASSIVES } from './passives';
 import type { SceneId } from './timeline';
 import type { Nature } from './natures';
-import type { Effect, EnemyKind, FloatText, PickupKind } from './types';
+import type { Effect, EnemyKind, Field, FloatText, PickupKind, Projectile } from './types';
 
 /**
  * Everything the renderer needs for one frame. Built from the local Game in solo,
@@ -62,7 +62,7 @@ export interface EnemyView {
 }
 
 export interface ProjectileView {
-  kind: 'kunai' | 'rasengan' | 'fireball';
+  kind: Projectile['kind'];
   x: number;
   y: number;
   r: number;
@@ -88,7 +88,7 @@ export interface FieldView {
   y: number;
   r: number;
   life: number;
-  style: 'shuriken' | 'blackfire' | 'sand';
+  style: Field['style'];
 }
 
 export interface PickupView {

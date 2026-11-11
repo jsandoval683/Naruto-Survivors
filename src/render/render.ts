@@ -4,7 +4,7 @@ import { LOOKS } from '../game/looks';
 import { NATURE_COLOR } from '../game/natures';
 import { BOSSES, type BossId } from '../game/bosses';
 import type { EnemyView, FieldView, HazardView, HeroView, PickupView, ProjectileView, SceneView, SlotView } from '../game/view';
-import { bijuSprite, blastSprite, fireballSprite, gemSprite, headSprite, ITEM_SPRITES, jutsuIcon, rasenganSprite, sandOrbSprite, walkFrame } from './pixel';
+import { bijuSprite, blastSprite, crowSprite, fireballSprite, gemSprite, headSprite, ITEM_SPRITES, jutsuIcon, lionSprite, rasenganSprite, sandOrbSprite, toadSprite, walkFrame } from './pixel';
 import { drawLook, drawMinion } from './sprites';
 
 export { drawGround } from './scenery';
@@ -74,6 +74,19 @@ function drawProjectile(ctx: CanvasRenderingContext2D, p: ProjectileView, t: num
     ctx.restore();
     return;
   }
+  if (p.kind === 'lion') {
+    const img = lionSprite(Math.floor(t * 10));
+    stamp(ctx, img, p.x, p.y, (p.r * 2.6) / img.width);
+    return;
+  }
+  if (p.kind === 'crow') {
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    if (Math.cos(p.angle) < 0) ctx.scale(-1, 1);
+    stamp(ctx, crowSprite(Math.floor(t * 12) % 2 === 0 ? 0 : 1), 0, 0, 1.8);
+    ctx.restore();
+    return;
+  }
   if (p.kind === 'fireball') {
     const img = fireballSprite(Math.floor(t * 12), !!p.big);
     stamp(ctx, img, p.x, p.y, (p.r * 2.6) / img.width);
@@ -100,14 +113,15 @@ function drawField(ctx: CanvasRenderingContext2D, f: FieldView, t: number): void
       const a = t * 16 + (i * Math.PI) / 2;
       for (let k = 0.45; k < 1; k += 0.12) ctx.fillRect(f.x + Math.cos(a) * f.r * k - 2, f.y + Math.sin(a) * f.r * k - 2, 4, 4);
     }
-  } else if (f.style === 'blackfire') {
+  } else if (f.style === 'blackfire' || f.style === 'fire') {
+    const fire = f.style === 'fire';
     for (let i = 0; i < 9; i++) {
       const a = (i / 9) * Math.PI * 2 + i;
       const d = f.r * 0.6 * ((i % 3) / 3 + 0.25);
       const fl = Math.floor((Math.sin(t * 12 + i) + 1) * 2);
-      ctx.fillStyle = i % 2 ? '#1a0a24' : '#3a1050';
+      ctx.fillStyle = fire ? (i % 2 ? '#c0391b' : '#ff7a2a') : i % 2 ? '#1a0a24' : '#3a1050';
       ctx.fillRect(f.x + Math.cos(a) * d - 4, f.y + Math.sin(a) * d - 8 - fl * 2, 8, 10 + fl * 2);
-      ctx.fillStyle = '#6b3fa0';
+      ctx.fillStyle = fire ? '#ffe14d' : '#6b3fa0';
       ctx.fillRect(f.x + Math.cos(a) * d - 2, f.y + Math.sin(a) * d - 10 - fl * 2, 4, 4);
     }
   } else {
@@ -356,6 +370,31 @@ export function render(ctx: CanvasRenderingContext2D, g: SceneView, view: View, 
     } else if (fx.kind === 'ring') {
       const r = fx.r * (1.1 - k * 0.4);
       stamp(ctx, blastSprite(fx.color, Math.round(r / 3), true), fx.x, fx.y, 3);
+    } else if (fx.kind === 'drop') {
+      // Shadow of a falling summon, growing until it lands.
+      const p = 1 - k;
+      ctx.globalAlpha = 0.25 + p * 0.35;
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.ellipse(fx.x, fx.y, fx.r * (0.3 + p * 0.7), fx.r * (0.15 + p * 0.35), 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (fx.kind === 'toad') {
+      const img = toadSprite();
+      const p = 1 - k;
+      ctx.globalAlpha = Math.min(1, k * 3);
+      stamp(ctx, img, fx.x, fx.y - fx.r * 0.25 - (p < 0.15 ? (0.15 - p) * 300 : 0), (fx.r * 1.5) / img.width);
+    } else if (fx.kind === 'shadow' && fx.pts) {
+      // Shikamaru's shadow: a thick dark band snaking along the ground.
+      ctx.globalAlpha = Math.min(1, k * 2) * 0.85;
+      ctx.strokeStyle = fx.color;
+      ctx.lineCap = 'round';
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      const [x1, y1, x2, y2] = fx.pts;
+      ctx.moveTo(x1, y1);
+      ctx.quadraticCurveTo((x1 + x2) / 2 + (y2 - y1) * 0.15, (y1 + y2) / 2 - (x2 - x1) * 0.15, x2, y2);
+      ctx.stroke();
+      ctx.lineCap = 'butt';
     } else if (fx.kind === 'bolt' && fx.pts) {
       ctx.strokeStyle = fx.color;
       ctx.lineWidth = fx.r;

@@ -5,11 +5,11 @@ import type { HazardView, HeroView } from '../game/view';
 import type { RunSummary } from '../meta/summary';
 
 /** Index tables so snapshots can send small numbers instead of strings. */
-export const ENEMY_KINDS: EnemyKind[] = ['grunt', 'puppet', 'brute', 'crow', 'zetsu', 'boss'];
+export const ENEMY_KINDS: EnemyKind[] = ['grunt', 'puppet', 'brute', 'crow', 'zetsu', 'boss', 'snake', 'sound', 'shark'];
 export const NATURES: Nature[] = ['fuego', 'viento', 'rayo', 'tierra', 'agua', 'neutral'];
-export const PROJ_KINDS = ['kunai', 'rasengan', 'fireball'] as const;
+export const PROJ_KINDS = ['kunai', 'rasengan', 'fireball', 'lion', 'crow'] as const;
 export const PICKUP_KINDS: PickupKind[] = ['xp', 'ryo', 'ramen', 'scroll', 'chest', 'biju', 'tenten', 'pill'];
-export const FIELD_STYLES = ['shuriken', 'blackfire', 'sand'] as const;
+export const FIELD_STYLES = ['shuriken', 'blackfire', 'sand', 'fire'] as const;
 
 /** Strides of the flat number arrays in a snapshot. */
 export const E_STRIDE = 8; // id, kind, nature, x, y, r, flash, hp%
