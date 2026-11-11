@@ -18,7 +18,8 @@ import { Online } from './net/api';
 import { CoopClient, NetGame } from './net/coop';
 import type { ChoiceSnap, PromptMsg } from './net/protocol';
 import { drawGround, formatTime, render, type View } from './render/render';
-import { drawLookDirect } from './render/sprites';
+import { drawLook, drawLookDirect } from './render/sprites';
+import { jutsuIconURL, walkFrame } from './render/pixel';
 import { CoopScreen } from './ui/coopScreen';
 import { MetaScreen, type MetaTab } from './ui/meta';
 
@@ -65,8 +66,9 @@ function resize(): void {
   view.h = window.innerHeight;
   canvas.width = Math.round(view.w * view.dpr);
   canvas.height = Math.round(view.h * view.dpr);
-  // Show roughly 720×450 world units; never zoom out so far that sprites get tiny.
-  view.zoom = Math.max(0.85, Math.min(2.2, Math.min(view.w / 720, view.h / 450)));
+  // Show about the area of 720×450 world units whatever the aspect ratio (portrait phones
+  // included), never zooming out so far that the pixel art gets tiny.
+  view.zoom = Math.max(0.9, Math.min(2.2, Math.sqrt((view.w * view.h) / (720 * 450))));
   game?.setView(view.w / view.zoom, view.h / view.zoom);
 }
 window.addEventListener('resize', resize);
@@ -184,7 +186,7 @@ function renderMenuParts(): void {
     const cv = document.createElement('canvas');
     cv.width = 96;
     cv.height = 96;
-    drawLookDirect(cv.getContext('2d')!, LOOKS[skinFor(id, save.skinSel)?.lookId ?? id], 48, 56, 26);
+    drawLookDirect(cv.getContext('2d')!, LOOKS[skinFor(id, save.skinSel)?.lookId ?? id], 48, 60, 32);
     b.appendChild(cv);
     if (!unlocked) {
       const lock = document.createElement('span');
@@ -272,6 +274,13 @@ function startRun(): void {
 
 // ---------------- level-up cards (solo and co-op) ----------------
 
+/** Jutsu cards get their pixel icon; passives and items keep their kanji. */
+function cardIcon(c: ChoiceSnap): string {
+  const m = /^[je]:(.+)$/.exec(c.key);
+  const url = m ? jutsuIconURL(m[1]) : null;
+  return url ? `<img class="pix-icon" src="${url}" alt="">` : c.icon;
+}
+
 function showCards(title: string, sub: string, cards: ChoiceSnap[], reroll: { left: number; can: boolean } | null): void {
   $('levelTitle').textContent = title;
   $('levelSub').textContent = `${sub} · 1 2 3`;
@@ -284,7 +293,7 @@ function showCards(title: string, sub: string, cards: ChoiceSnap[], reroll: { le
     b.innerHTML = `
       <span class="num">${i + 1}</span>
       <div class="head">
-        <div class="icon" style="color:${c.color}">${c.icon}</div>
+        <div class="icon" style="color:${c.color}">${cardIcon(c)}</div>
         <div><div class="title">${c.title}</div><div class="tag ${c.isNew ? 'new' : ''}">${c.tag}</div></div>
       </div>
       <div class="desc">${c.desc}</div>`;
@@ -642,7 +651,20 @@ function frame(now: number): void {
     const cx = menuT * 18;
     const cy = menuT * 8;
     ctx.setTransform(s, 0, 0, s, canvas.width / 2 - cx * s, canvas.height / 2 - cy * s);
-    drawGround(ctx, cx, cy, view.w / view.zoom, view.h / view.zoom, 'konoha');
+    const ww = view.w / view.zoom;
+    const wh = view.h / view.zoom;
+    drawGround(ctx, cx, cy, ww, wh, 'konoha');
+    // Ninjas running along the bottom of the menu, a few renegades on their heels.
+    const span = ww + 260;
+    CHARACTER_ORDER.forEach((id, i) => {
+      const x = cx - ww / 2 - 130 + ((menuT * 55 + i * 70) % span);
+      const y = cy + wh / 2 - 46 - (i % 2) * 14;
+      drawLook(ctx, LOOKS[skinFor(id, save.skinSel)?.lookId ?? id], x, y, 13, false, walkFrame(true, menuT + i * 0.3));
+    });
+    for (let i = 0; i < 3; i++) {
+      const x = cx - ww / 2 - 130 + ((menuT * 55 - 120 - i * 40 + span * 4) % span);
+      drawLook(ctx, LOOKS.renegade, x, cy + wh / 2 - 40 - i * 9, 11, false, walkFrame(true, menuT + i), 1, false, '#8fe3a8');
+    }
   }
   requestAnimationFrame(frame);
 }

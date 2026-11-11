@@ -238,7 +238,7 @@ class Room {
       prompt: {
         title: special ? special.title : `¡Nivel ${this.game!.level - h.pendingLevelUps + 1}!`,
         sub: special ? special.sub : 'Elige una mejora',
-        choices: p.choices.map(({ title, tag, isNew, desc, icon, color }) => ({ title, tag, isNew, desc, icon, color })),
+        choices: p.choices.map(({ key, title, tag, isNew, desc, icon, color }) => ({ key, title, tag, isNew, desc, icon, color })),
         rerolls: h.rerolls,
         canReroll: !p.special && h.rerolls > 0,
         seconds: Math.max(0, Math.round((p.deadline - Date.now()) / 1000)),

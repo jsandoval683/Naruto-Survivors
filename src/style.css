@@ -971,3 +971,100 @@ button {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* ---------------- pixel-art look ---------------- */
+
+html,
+body,
+button,
+input {
+  font-family: 'Pixelify Sans', system-ui, sans-serif;
+}
+
+canvas,
+.char canvas,
+.portrait,
+.player-slot canvas {
+  image-rendering: pixelated;
+}
+
+h1 {
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-shadow: 3px 3px 0 #160f1c, -1px -1px 0 #160f1c;
+}
+
+.panel {
+  border-radius: 4px;
+  border-width: 3px;
+  box-shadow: 0 0 0 3px #160f1c, 8px 8px 0 rgba(0, 0, 0, 0.45);
+}
+
+.primary,
+.secondary,
+.buy,
+.tab {
+  border-radius: 4px;
+  box-shadow: 0 3px 0 #160f1c;
+  transition: transform 0.05s;
+}
+
+.primary:active,
+.secondary:active,
+.buy:active,
+.tab:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #160f1c;
+}
+
+.card,
+.char,
+.up,
+.shop-item,
+.mission,
+.ach,
+.room-row,
+.player-slot,
+.hero-info,
+.prize {
+  border-radius: 4px;
+}
+
+.card {
+  box-shadow: 0 4px 0 #160f1c;
+}
+
+.card .icon,
+.up-icon,
+.big-icon {
+  border-radius: 3px;
+}
+
+#pauseBtn {
+  border-radius: 4px;
+  box-shadow: 0 3px 0 #160f1c;
+}
+
+.pix-icon {
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+}
+
+/* Logo: warm gradient letters with a chunky pixel outline. */
+h1 {
+  background: linear-gradient(#ffe066 0%, #ffb347 45%, #f5822a 55%, #d9531e 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+  font-size: 44px;
+  filter: drop-shadow(3px 0 0 #160f1c) drop-shadow(-3px 0 0 #160f1c) drop-shadow(0 3px 0 #160f1c) drop-shadow(0 -3px 0 #160f1c) drop-shadow(4px 5px 0 rgba(0, 0, 0, 0.45));
+}
+
+h1 span {
+  -webkit-background-clip: initial;
+  background: none;
+  color: var(--accent);
+  filter: none;
+}

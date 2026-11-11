@@ -64,6 +64,7 @@ export interface Snapshot {
 }
 
 export interface ChoiceSnap {
+  key: string;
   title: string;
   tag: string;
   isNew: boolean;

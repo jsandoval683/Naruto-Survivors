@@ -1,9 +1,9 @@
-/** Placeholder appearance for a character or boss, drawn with shapes by the renderer. */
+/** Appearance of a character, boss or minion; the pixel-art generator builds its sprite from this. */
 export interface Look {
   id: string;
   skin: string;
   hair: string;
-  hairStyle: 'spiky' | 'bob' | 'bowl' | 'long' | 'ponytail' | 'slick' | 'tall' | 'hood' | 'bun';
+  hairStyle: 'spiky' | 'bob' | 'bowl' | 'long' | 'ponytail' | 'slick' | 'tall' | 'hood' | 'bun' | 'none';
   top: string;
   bottom: string;
   eye: string;
@@ -11,6 +11,8 @@ export interface Look {
   mask?: string;
   cloak?: boolean;
   extra?: 'whiskers' | 'gourd' | 'brows' | 'piercings' | 'cracks';
+  /** Wider body (heavy enemies). */
+  bulky?: boolean;
 }
 
 export const LOOKS: Record<string, Look> = {
@@ -28,6 +30,12 @@ export const LOOKS: Record<string, Look> = {
   gaara_kazekage: { id: 'gaara_kazekage', skin: '#f0d5b8', hair: '#c0392b', hairStyle: 'spiky', top: '#eef0f2', bottom: '#3a6aa0', eye: '#3fb59b', extra: 'gourd' },
   lee_puertas: { id: 'lee_puertas', skin: '#e8907a', hair: '#151515', hairStyle: 'bowl', top: '#2f8a2f', bottom: '#f39c32', eye: '#fff', extra: 'brows' },
   sasuke_akatsuki: { id: 'sasuke_akatsuki', skin: '#f2d8c0', hair: '#1d2233', hairStyle: 'spiky', top: '#111', bottom: '#111', eye: '#e01b1b', cloak: true },
+
+  // Minions (headband plate / chest mark take the enemy's nature colour)
+  renegade: { id: 'renegade', skin: '#d9b08c', hair: '#2a2a30', hairStyle: 'spiky', top: '#4a4f5a', bottom: '#33363d', eye: '#ffe66b', band: '#2c2c34', mask: '#2c2c34' },
+  brute: { id: 'brute', skin: '#c99a74', hair: '#2a2a30', hairStyle: 'none', top: '#5a3e30', bottom: '#3a2a22', eye: '#ffe66b', band: '#2c2c34', bulky: true },
+  zetsu: { id: 'zetsu', skin: '#ecebe4', hair: '#ecebe4', hairStyle: 'none', top: '#e2e0d6', bottom: '#cfccc0', eye: '#2a2a2a' },
+  puppet: { id: 'puppet', skin: '#c08a58', hair: '#4a2f1c', hairStyle: 'bob', top: '#7a5232', bottom: '#5a3a22', eye: '#c0392b', extra: 'cracks' },
 
   deidara: { id: 'deidara', skin: '#f2c99a', hair: '#ffe066', hairStyle: 'ponytail', top: '#111', bottom: '#111', eye: '#4fa8ff', cloak: true },
   sasori: { id: 'sasori', skin: '#f0d5b8', hair: '#b03030', hairStyle: 'bob', top: '#111', bottom: '#111', eye: '#7a5a3a', cloak: true },

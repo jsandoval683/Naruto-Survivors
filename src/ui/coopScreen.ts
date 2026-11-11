@@ -90,7 +90,7 @@ export class CoopScreen {
       </div>`;
     this.root.querySelectorAll<HTMLCanvasElement>('canvas[data-look]').forEach((c) => {
       const look = LOOKS[c.dataset.look!] ?? LOOKS.naruto;
-      drawLookDirect(c.getContext('2d')!, look, 48, 56, 26);
+      drawLookDirect(c.getContext('2d')!, look, 48, 60, 32);
     });
     this.bind();
   }

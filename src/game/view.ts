@@ -11,6 +11,8 @@ import type { Effect, EnemyKind, FloatText, PickupKind } from './types';
  * or from server snapshots in co-op, so the same drawing code serves both.
  */
 export interface SlotView {
+  /** Jutsu id (pixel icon); passives use the kanji `icon`. */
+  id?: string;
   icon: string;
   color: string;
   level: number;
@@ -154,7 +156,7 @@ export function heroView(h: Hero): HeroView {
     clones,
     tags,
     orbs,
-    slots: h.weapons.map((w) => ({ icon: JUTSUS[w.id].icon, color: w.evolved ? '#ffd23f' : JUTSUS[w.id].color, level: w.level, evolved: w.evolved })),
+    slots: h.weapons.map((w) => ({ id: w.id, icon: JUTSUS[w.id].icon, color: w.evolved ? '#ffd23f' : JUTSUS[w.id].color, level: w.level, evolved: w.evolved })),
     passives: [...h.passives.entries()].map(([id, l]) => ({ icon: PASSIVES[id].icon, color: PASSIVES[id].color, level: l })),
   };
 }
