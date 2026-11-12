@@ -1,14 +1,18 @@
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { extname, join, normalize, resolve } from 'node:path';
+import { extname, join, normalize, resolve, sep } from 'node:path';
 import { WebSocketServer } from 'ws';
-import { AuthError, login, logout, register, userFromToken } from './auth';
+import { AuthError, deleteAccount, login, logout, register, userFromToken } from './auth';
 import { db } from './db';
 import { claimSeasonReward, lastRunAge, leaderboard, recordRun, seasonEnds, seasonOf, type Board } from './ranking';
 import { handleClose, handleMessage, type Conn } from './rooms';
 import type { ClientMsg } from '../src/net/protocol';
 
 const PORT = Number(process.env.PORT ?? 8787);
+/** Interface to listen on. Behind a reverse proxy use 127.0.0.1 so the port isn't reachable from outside. */
+const HOST = process.env.HOST ?? '0.0.0.0';
+/** Set to 1 when behind a proxy (Caddy) that sets X-Forwarded-For. */
+const TRUST_PROXY = process.env.TRUST_PROXY === '1';
 const STATIC_DIR = resolve(process.env.STATIC_DIR ?? 'dist');
 const MAX_BODY = 512 * 1024;
 
@@ -39,6 +43,31 @@ async function readBody(req: IncomingMessage): Promise<any> {
   }
 }
 
+function clientIp(req: IncomingMessage): string {
+  if (TRUST_PROXY) {
+    const xff = String(req.headers['x-forwarded-for'] ?? '').split(',').pop()?.trim();
+    if (xff) return xff;
+  }
+  return req.socket.remoteAddress ?? '?';
+}
+
+/** Brute-force guard for login/register: at most AUTH_MAX attempts per IP every AUTH_WINDOW ms. */
+const AUTH_MAX = 15;
+const AUTH_WINDOW = 10 * 60 * 1000;
+const authHits = new Map<string, { n: number; reset: number }>();
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, h] of authHits) if (h.reset < now) authHits.delete(ip);
+}, 60 * 1000).unref();
+
+function limitAuth(req: IncomingMessage): void {
+  const ip = clientIp(req);
+  const now = Date.now();
+  let h = authHits.get(ip);
+  if (!h || h.reset < now) authHits.set(ip, (h = { n: 0, reset: now + AUTH_WINDOW }));
+  if (++h.n > AUTH_MAX) throw new HttpError(429, 'Demasiados intentos. Espera unos minutos y vuelve a probar.');
+}
+
 function bearer(req: IncomingMessage): string | null {
   const h = req.headers.authorization ?? '';
   return h.startsWith('Bearer ') ? h.slice(7) : null;
@@ -54,16 +83,23 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL): Promise
   const route = `${req.method} ${url.pathname}`;
   switch (route) {
     case 'POST /api/register': {
+      limitAuth(req);
       const b = await readBody(req);
-      return json(res, 200, register(b.name, b.password));
+      return json(res, 200, register(b.name, b.password, b.consent));
     }
     case 'POST /api/login': {
+      limitAuth(req);
       const b = await readBody(req);
       return json(res, 200, login(b.name, b.password));
     }
     case 'POST /api/logout': {
       const t = bearer(req);
       if (t) logout(t);
+      return json(res, 200, { ok: true });
+    }
+    case 'DELETE /api/account': {
+      const u = requireUser(req);
+      deleteAccount(u.id);
       return json(res, 200, { ok: true });
     }
     case 'GET /api/me': {
@@ -118,6 +154,9 @@ const MIME: Record<string, string> = {
   '.png': 'image/png',
   '.ico': 'image/x-icon',
   '.json': 'application/json',
+  '.txt': 'text/plain; charset=utf-8',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
 };
 
 function serveStatic(res: ServerResponse, pathname: string): void {
@@ -126,10 +165,20 @@ function serveStatic(res: ServerResponse, pathname: string): void {
     res.end('Servidor de la API en marcha. En desarrollo abre el juego con "npm run dev".');
     return;
   }
-  let file = normalize(join(STATIC_DIR, decodeURIComponent(pathname)));
-  if (!file.startsWith(STATIC_DIR) || !existsSync(file) || statSync(file).isDirectory()) file = join(STATIC_DIR, 'index.html');
-  res.writeHead(200, { 'Content-Type': MIME[extname(file)] ?? 'application/octet-stream' });
-  createReadStream(file).pipe(res);
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Ruta no válida.');
+    return;
+  }
+  let file = normalize(join(STATIC_DIR, decoded));
+  if (!file.startsWith(STATIC_DIR + sep) || !existsSync(file) || statSync(file).isDirectory()) file = join(STATIC_DIR, 'index.html');
+  // Vite's hashed bundles never change; everything else must be revalidated so updates reach players.
+  const cache = file.startsWith(join(STATIC_DIR, 'assets') + sep) ? 'public, max-age=31536000, immutable' : 'no-cache';
+  res.writeHead(200, { 'Content-Type': MIME[extname(file)] ?? 'application/octet-stream', 'Cache-Control': cache });
+  createReadStream(file).on('error', () => res.destroy()).pipe(res);
 }
 
 const server = createServer(async (req, res) => {
@@ -175,4 +224,14 @@ server.on('upgrade', (req, socket, head) => {
   });
 });
 
-server.listen(PORT, () => console.log(`Naruto Survivors server on http://localhost:${PORT}`));
+server.listen(PORT, HOST, () => console.log(`Shinobi Survivors server on http://${HOST}:${PORT}`));
+
+// systemd stops the service with SIGTERM: close cleanly so SQLite checkpoints its WAL.
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  process.on(signal, () => {
+    for (const ws of wss.clients) ws.close(1001, 'Servidor reiniciándose');
+    server.close();
+    db.close();
+    process.exit(0);
+  });
+}

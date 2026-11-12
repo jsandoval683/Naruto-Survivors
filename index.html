@@ -4,10 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <meta name="theme-color" content="#0b1020" />
-    <title>Naruto Shippuden Survivors</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&display=swap" rel="stylesheet" />
+    <title>Shinobi Survivors · juego de fans no oficial</title>
+    <meta name="description" content="Shinobi Survivors: juego de fans gratuito, no oficial y sin ánimo de lucro, del género survivors, inspirado en Naruto Shippuden. Sin relación con los titulares de Naruto." />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -18,8 +16,8 @@
 
     <section id="menu" class="screen">
       <div class="panel menu-panel">
-        <h1>NARUTO<span>SHIPPUDEN SURVIVORS</span></h1>
-        <p class="fan">Juego de fans no oficial · prototipo</p>
+        <h1>SHINOBI<span>SURVIVORS</span></h1>
+        <p class="fan">Juego de fans de <i>Naruto Shippuden</i>, <b>no oficial</b> y <b>sin ánimo de lucro</b></p>
         <div id="accountLine" class="account-line"></div>
         <div id="menuWallet" class="wallet center"></div>
         <div id="notices"></div>
@@ -37,6 +35,11 @@
         </div>
         <div id="menuStats" class="stats"></div>
         <p class="muted small">WASD / flechas para moverte · los jutsus atacan solos · Esc pausa<br />En móvil: arrastra el dedo en cualquier parte</p>
+        <footer class="legal-foot">
+          Proyecto de fans gratuito y sin ánimo de lucro: sin publicidad ni compras. No está afiliado ni respaldado por los titulares de la licencia.
+          Naruto © Masashi Kishimoto / Shueisha · TV Tokyo · Studio Pierrot. Arte, código y sonido originales.
+          <a href="/legal.html" target="_blank" rel="noopener">Aviso legal y privacidad</a>
+        </footer>
       </div>
     </section>
 
@@ -48,6 +51,14 @@
           <input id="authName" placeholder="Nombre" autocomplete="username" maxlength="16" />
           <input id="authPass" type="password" placeholder="Contraseña" autocomplete="current-password" />
           <p id="authError" class="coop-error"></p>
+          <label id="consentRow" class="consent hidden">
+            <input type="checkbox" id="authConsent" />
+            <span>Autorizo el tratamiento de mis datos personales según la
+              <a href="/legal.html#privacidad" target="_blank" rel="noopener">política de tratamiento de datos</a> (Ley 1581 de 2012) y acepto los
+              <a href="/legal.html#terminos" target="_blank" rel="noopener">términos de uso</a>. Si soy menor de 18 años, cuento con la autorización de mi
+              padre, madre o representante legal.</span>
+          </label>
+          <p class="muted small consent-note">No pedimos correo ni datos personales: no uses tu nombre real como usuario.</p>
           <button class="primary" type="submit" id="authSubmit">Entrar</button>
         </form>
         <p class="small"><a href="#" id="authSwitch">¿No tienes cuenta? Créala</a></p>

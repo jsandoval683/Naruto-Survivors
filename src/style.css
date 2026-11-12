@@ -1112,3 +1112,57 @@ h1 span {
   accent-color: var(--orange);
   width: 110px;
 }
+
+
+/* ---------------- legal ---------------- */
+
+.legal-foot {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.legal-foot a,
+.consent a {
+  color: var(--accent);
+}
+
+.consent {
+  margin: 0;
+  text-align: left;
+}
+
+@media (max-width: 640px) {
+  .sound-btn {
+    top: auto;
+    bottom: 12px;
+    right: 12px;
+  }
+}
+
+
+.consent {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  text-align: left;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.consent input {
+  margin-top: 2px;
+  accent-color: var(--orange);
+  flex: none;
+}
+
+.consent-note {
+  margin: 0;
+  text-align: left;
+}

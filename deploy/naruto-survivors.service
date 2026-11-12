@@ -1,0 +1,29 @@
+[Unit]
+Description=Shinobi Survivors (juego, API y cooperativo)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=naruto
+Group=naruto
+WorkingDirectory=/opt/naruto-survivors
+Environment=NODE_ENV=production
+Environment=PORT=8787
+# Solo escucha en local: el tráfico de fuera entra por Caddy (HTTPS).
+Environment=HOST=127.0.0.1
+Environment=TRUST_PROXY=1
+Environment=DB_PATH=/var/lib/naruto-survivors/naruto-survivors.db
+Environment=STATIC_DIR=/opt/naruto-survivors/dist
+ExecStart=/opt/naruto-survivors/node_modules/.bin/tsx server/index.ts
+Restart=always
+RestartSec=3
+
+# Endurecimiento: el proceso solo puede escribir en la carpeta de datos.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/naruto-survivors
+
+[Install]
+WantedBy=multi-user.target

@@ -1,4 +1,4 @@
-# Naruto Shippuden Survivors — Documento de diseño
+# Shinobi Survivors — Documento de diseño
 
 Basado en el análisis de **PokéSurvivor** (pokesurvivor.com) y **Dragon Ball Survivors** (dbsurvivors.xyz), revisados el 11/11/2026 jugando una partida en cada uno y leyendo sus guías.
 

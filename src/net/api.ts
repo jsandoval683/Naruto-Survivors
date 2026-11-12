@@ -91,8 +91,8 @@ export class Online {
     this.onChange();
   }
 
-  async login(name: string, password: string, create: boolean): Promise<void> {
-    const r = await call<{ token: string; user: Account }>('POST', create ? '/register' : '/login', { name, password });
+  async login(name: string, password: string, create: boolean, consent = false): Promise<void> {
+    const r = await call<{ token: string; user: Account }>('POST', create ? '/register' : '/login', { name, password, consent });
     storageSet(TOKEN_KEY, r.token);
     storageSet(REV_KEY, null);
     await this.loadMe();
@@ -107,6 +107,14 @@ export class Online {
       // the token is dropped locally anyway
     }
     this.forget();
+    this.onChange();
+  }
+
+  /** Deletes the account and all its data on the server; local progress stays on this device. */
+  async deleteAccount(): Promise<void> {
+    await call('DELETE', '/account');
+    this.forget();
+    this.notices.push('Tu cuenta y todos sus datos se han borrado del servidor. Tu progreso sigue guardado en este navegador.');
     this.onChange();
   }
 

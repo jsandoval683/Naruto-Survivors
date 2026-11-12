@@ -48,6 +48,11 @@ db.exec(`
   );
 `);
 
+// Migration: proof of the data-processing authorization (Ley 1581 de 2012).
+const userCols = (db.prepare('PRAGMA table_info(users)').all() as { name: string }[]).map((c) => c.name);
+if (!userCols.includes('consent_at')) db.exec('ALTER TABLE users ADD COLUMN consent_at INTEGER');
+if (!userCols.includes('consent_version')) db.exec('ALTER TABLE users ADD COLUMN consent_version TEXT');
+
 export interface UserRow {
   id: number;
   name: string;

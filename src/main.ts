@@ -1,3 +1,7 @@
+// Pixel font served from our own server (no requests to third parties). SIL OFL 1.1.
+import '@fontsource/pixelify-sans/400.css';
+import '@fontsource/pixelify-sans/600.css';
+import '@fontsource/pixelify-sans/700.css';
 import { AudioDirector, Sound } from './audio/sound';
 import { Input } from './core/input';
 import { loadSave, onSaveWritten, writeSave } from './core/save';
@@ -136,6 +140,8 @@ function setAuthMode(create: boolean): void {
   $('authSubmit').textContent = create ? 'Crear cuenta' : 'Entrar';
   $('authSwitch').textContent = create ? '¿Ya tienes cuenta? Entra' : '¿No tienes cuenta? Créala';
   $<HTMLInputElement>('authPass').autocomplete = create ? 'new-password' : 'current-password';
+  $('consentRow').classList.toggle('hidden', !create);
+  $<HTMLInputElement>('authConsent').checked = false;
 }
 
 $('authSwitch').addEventListener('click', (e) => {
@@ -150,7 +156,9 @@ $('authForm').addEventListener('submit', async (e) => {
   $('authError').textContent = '';
   $('authSubmit').setAttribute('disabled', '');
   try {
-    await online.login(name, pass, authCreate);
+    const consent = $<HTMLInputElement>('authConsent').checked;
+    if (authCreate && !consent) throw new Error('Para crear una cuenta debes marcar la casilla de autorización.');
+    await online.login(name, pass, authCreate, consent);
     $<HTMLInputElement>('authPass').value = '';
     const next = afterLogin;
     afterLogin = null;
@@ -166,10 +174,24 @@ $('authForm').addEventListener('submit', async (e) => {
 function renderAccountLine(): void {
   const el = $('accountLine');
   if (online.account) {
-    el.innerHTML = `<span>Conectado como <b>${esc(online.account.name)}</b> · progreso en la nube</span><button id="logoutBtn">Salir</button>`;
+    el.innerHTML = `<span>Conectado como <b>${esc(online.account.name)}</b> · progreso en la nube</span><button id="logoutBtn">Salir</button><button id="deleteAccBtn">Borrar cuenta</button>`;
     $('logoutBtn').addEventListener('click', async () => {
       coop.close();
       await online.logout();
+      renderMenu();
+    });
+    $('deleteAccBtn').addEventListener('click', async () => {
+      const ok = window.confirm(
+        `¿Borrar la cuenta «${online.account?.name}» y todos sus datos del servidor (progreso en la nube, ranking y sesiones)?\n\n` +
+          'No se puede deshacer. Tu progreso seguirá guardado en este navegador.',
+      );
+      if (!ok) return;
+      try {
+        coop.close();
+        await online.deleteAccount();
+      } catch (err) {
+        window.alert((err as Error).message);
+      }
       renderMenu();
     });
   } else {

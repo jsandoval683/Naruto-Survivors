@@ -1,0 +1,15 @@
+# setup.sh sustituye DOMINIO por tu dominio y copia esto a /etc/caddy/Caddyfile.
+# Caddy obtiene y renueva solo el certificado HTTPS (Let's Encrypt) y reenvía
+# también el WebSocket del cooperativo (/ws).
+DOMINIO {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8787
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+}
