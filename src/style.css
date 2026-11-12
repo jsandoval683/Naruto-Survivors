@@ -1068,3 +1068,47 @@ h1 span {
   color: var(--accent);
   filter: none;
 }
+
+
+/* ---------------- sound ---------------- */
+
+.sound-btn {
+  position: fixed;
+  top: 18px;
+  right: 60px;
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  border: 2px solid var(--border);
+  background: rgba(10, 14, 28, 0.8);
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 700;
+  box-shadow: 0 3px 0 #160f1c;
+  z-index: 5;
+}
+
+.sound-btn.muted {
+  color: var(--muted);
+}
+
+.audio-ctl {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.audio-ctl label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.audio-ctl input {
+  accent-color: var(--orange);
+  width: 110px;
+}

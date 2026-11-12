@@ -50,6 +50,7 @@ export interface Snapshot {
   nb: { t: number; ids: string[] } | null;
   bn: { text: string; life: number; sub?: string } | null;
   tn: { color: string; life: number; max: number } | null;
+  dim: string | null;
   /** Names of players currently choosing a card (the world is paused meanwhile). */
   choosing: string[];
   h: HeroSnap[];

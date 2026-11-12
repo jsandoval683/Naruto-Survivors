@@ -10,7 +10,7 @@ export interface Look {
   band?: string;
   mask?: string;
   cloak?: boolean;
-  extra?: 'whiskers' | 'gourd' | 'brows' | 'piercings' | 'cracks' | 'gills' | 'glasses' | 'facepaint';
+  extra?: 'whiskers' | 'gourd' | 'brows' | 'piercings' | 'cracks' | 'gills' | 'glasses' | 'facepaint' | 'horns';
   /** Wider body (heavy enemies). */
   bulky?: boolean;
 }
@@ -51,6 +51,11 @@ export const LOOKS: Record<string, Look> = {
   kisame: { id: 'kisame', skin: '#6a9ac0', hair: '#2d4a6b', hairStyle: 'spiky', top: '#111', bottom: '#111', eye: '#f4f6f8', cloak: true, extra: 'gills' },
   konan: { id: 'konan', skin: '#f2d8c0', hair: '#6a5ab8', hairStyle: 'bun', top: '#111', bottom: '#111', eye: '#c9a0e0', cloak: true, extra: 'piercings' },
   kabuto: { id: 'kabuto', skin: '#f0d8c0', hair: '#c9ccd2', hairStyle: 'ponytail', top: '#6a3a8a', bottom: '#3a2a4a', eye: '#1a1a1a', extra: 'glasses' },
+
+  obito: { id: 'obito', skin: '#f0d8c0', hair: '#eeeeee', hairStyle: 'spiky', top: '#f4f1ea', bottom: '#1a1a1a', eye: '#e01b1b', extra: 'cracks' },
+  madara_rikudo: { id: 'madara_rikudo', skin: '#f0d8c0', hair: '#e8e8e8', hairStyle: 'long', top: '#f4f1ea', bottom: '#1a1a1a', eye: '#b49cff' },
+  kaguya: { id: 'kaguya', skin: '#f4f1ea', hair: '#f4f6f8', hairStyle: 'long', top: '#f4f1ea', bottom: '#c9b8e0', eye: '#b49cff', extra: 'horns' },
+  zetsu_negro: { id: 'zetsu_negro', skin: '#141414', hair: '#141414', hairStyle: 'none', top: '#141414', bottom: '#0a0a0a', eye: '#ffe14d' },
 
   deidara: { id: 'deidara', skin: '#f2c99a', hair: '#ffe066', hairStyle: 'ponytail', top: '#111', bottom: '#111', eye: '#4fa8ff', cloak: true },
   sasori: { id: 'sasori', skin: '#f0d5b8', hair: '#b03030', hairStyle: 'bob', top: '#111', bottom: '#111', eye: '#7a5a3a', cloak: true },

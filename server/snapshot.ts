@@ -65,6 +65,7 @@ export class SnapshotEncoder {
       nb: g.director.nextBoss(g.t),
       bn: g.banner,
       tn: g.tint,
+      dim: g.dimension,
       choosing: g.heroes.filter((h) => h.hasPrompt).map((h) => h.name),
       h: g.heroes.map((h) => {
         const v = heroView(h);

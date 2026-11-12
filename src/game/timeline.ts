@@ -3,7 +3,7 @@ import type { MinionKind } from './enemies';
 import type { Game } from './game';
 import type { Nature } from './natures';
 
-export type SceneId = 'desierto' | 'bosque' | 'uchiha' | 'konoha' | 'crater' | 'guerra';
+export type SceneId = 'desierto' | 'bosque' | 'uchiha' | 'konoha' | 'crater' | 'guerra' | 'dim_lava' | 'dim_hielo' | 'dim_gravedad' | 'dim_arena';
 
 export interface MinionWeight {
   kind: MinionKind;
@@ -108,6 +108,31 @@ export const ARCS: Arc[] = [
       { t: 1125, ids: ['kabuto'] },
       { t: 1200, ids: ['madara'] },
     ],
+  },
+  {
+    start: 1350,
+    name: 'El Juubi despierta',
+    scene: 'crater',
+    minions: [
+      { kind: 'zetsu', w: 1.2 },
+      { kind: 'brute', w: 0.4 },
+      { kind: 'shark', w: 0.3 },
+      { kind: 'sound', w: 0.3 },
+    ],
+    natures: ['fuego', 'viento', 'rayo', 'tierra', 'agua'],
+    bosses: [
+      { t: 1350, ids: ['obito'] },
+      { t: 1500, ids: ['madara_rikudo'] },
+    ],
+  },
+  {
+    // Final event: no minions, only Kaguya, Black Zetsu and the echoes she summons.
+    start: 1800,
+    name: 'Kaguya Ōtsutsuki',
+    scene: 'dim_lava',
+    minions: [],
+    natures: ['neutral'],
+    bosses: [{ t: 1800, ids: ['kaguya', 'zetsu_negro'] }],
   },
 ];
 

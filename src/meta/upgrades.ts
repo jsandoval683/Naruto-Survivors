@@ -23,7 +23,7 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'fortuna', name: 'Fortuna', desc: '+8% de ryō', icon: '両', max: 10, base: 120 },
   { id: 'critico', name: 'Golpe crítico', desc: '+2% de crítico', icon: '写', max: 10, base: 90 },
   { id: 'cambios', name: 'Cambio de cartas', desc: '+1 cambio de cartas por partida', icon: '↻', max: 3, base: 150 },
-  { id: 'repertorio', name: 'Repertorio', desc: 'Empiezas con un segundo jutsu', icon: '巻', max: 1, base: 1500 },
+  { id: 'repertorio', name: 'Repertorio', desc: 'Empiezas también con tu jutsu propio', icon: '巻', max: 1, base: 1500 },
 ];
 
 export function upgradeCost(u: UpgradeDef, level: number): number {

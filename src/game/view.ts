@@ -38,6 +38,8 @@ export interface HeroView {
   revive: number;
   pillTime: number;
   hurtFlash: number;
+  /** Just took fire damage: draw small flames on them. */
+  burning: boolean;
   formName: string | null;
   aura: string | null;
   clones: { x: number; y: number; facingLeft: boolean; anim: number }[];
@@ -120,6 +122,8 @@ export interface SceneView {
   banner: { text: string; life: number; sub?: string } | null;
   tint: { color: string; life: number; max: number } | null;
   nextBoss: { t: number; ids: string[] } | null;
+  /** Kaguya's active dimension (visual overlay). */
+  dimension: string | null;
 }
 
 export function heroView(h: Hero): HeroView {
@@ -151,6 +155,7 @@ export function heroView(h: Hero): HeroView {
     revive: h.revive,
     pillTime: h.pillTime,
     hurtFlash: h.hurtFlash,
+    burning: h.lastHitBy === 'fuego' && p.invuln > 0.15,
     formName: h.transform?.name ?? null,
     aura: h.transform?.aura ?? null,
     clones,
@@ -184,5 +189,6 @@ export function gameView(g: Game): SceneView {
     banner: g.banner,
     tint: g.tint,
     nextBoss: g.director.nextBoss(g.t),
+    dimension: g.dimension,
   };
 }

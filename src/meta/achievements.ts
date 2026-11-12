@@ -28,7 +28,9 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'b_caminos', name: 'Seis Caminos', desc: 'Derrota a los Seis Caminos de Pain', ryo: 400, tickets: 1, check: beat(...PATHS) },
   { id: 'b_pain', name: 'Conocer el dolor', desc: 'Derrota a Pain', ryo: 500, tickets: 2, check: beat('pain') },
   { id: 'b_kages', name: 'Edo Tensei', desc: 'Derrota a los tres Kages reanimados', ryo: 500, tickets: 2, check: beat('raikage', 'tsuchikage', 'mizukage') },
-  { id: 'b_madara', name: 'Fin de la guerra', desc: 'Derrota a Madara', tickets: 5, check: beat('madara') },
+  { id: 'b_madara', name: 'Fin de la guerra', desc: 'Derrota a Madara', tickets: 3, check: beat('madara') },
+  { id: 'b_juubi', name: 'El Juubi cae', desc: 'Derrota a Óbito y a Madara de los Seis Caminos', tickets: 3, check: beat('obito', 'madara_rikudo') },
+  { id: 'b_kaguya', name: 'Sello de los Seis Caminos', desc: 'Derrota a Kaguya', tickets: 8, check: beat('kaguya') },
 
   { id: 't5', name: 'Superviviente', desc: 'Aguanta 5 minutos', ryo: 150, check: (s) => s.bestTime >= 300 },
   { id: 't10', name: 'Veterano', desc: 'Aguanta 10 minutos', ryo: 300, check: (s) => s.bestTime >= 600 },
@@ -39,7 +41,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   ...CHARACTER_ORDER.map((id) => ({
     id: `win_${id}`,
     name: `Victoria con ${CHARACTERS[id].name}`,
-    desc: `Derrota a Madara con ${CHARACTERS[id].name}`,
+    desc: `Derrota a Kaguya con ${CHARACTERS[id].name}`,
     tickets: 2,
     check: (s: SaveData) => (s.winsBy[id] ?? 0) > 0,
   })),

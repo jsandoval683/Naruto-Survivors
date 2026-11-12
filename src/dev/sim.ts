@@ -18,7 +18,7 @@ export interface SimResult {
   killedBy: string;
 }
 
-export function simulate(charId: CharacterId = 'naruto', maxTime = 1500): SimResult {
+export function simulate(charId: CharacterId = 'naruto', maxTime = 2400): SimResult {
   let over = false;
   let win = false;
   const bot = { axis: () => ({ x: 0, y: 0 }) } as unknown as Input;
@@ -81,7 +81,7 @@ export function simulate(charId: CharacterId = 'naruto', maxTime = 1500): SimRes
       while (g.pendingLevelUps > 0) {
         const opts = rollChoices(g);
         const rank = (c: (typeof opts)[number]) =>
-          c.tag === 'Evolución' ? 0 : c.key.startsWith('j:') && !c.isNew ? 1 : c.key.startsWith('j:') ? 2 : c.key.startsWith('p:') ? 3 : 4;
+          c.key === `j:${g.char.start}` && c.isNew ? -1 : c.tag === 'Evolución' ? 0 : c.key.startsWith('j:') && !c.isNew ? 1 : c.key.startsWith('j:') ? 2 : c.key.startsWith('p:') ? 3 : c.key.startsWith('m:') ? 3.5 : 4;
         opts.sort((a, b) => rank(a) - rank(b))[0].apply(g);
         g.pendingLevelUps--;
       }

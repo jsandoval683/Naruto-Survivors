@@ -1,5 +1,6 @@
 import type { Game } from './game';
 import { JUTSUS, JUTSU_MAX_LEVEL } from './jutsus';
+import { MASTERY } from './hero';
 import { PASSIVES } from './passives';
 
 export const MAX_JUTSUS = 5;
@@ -112,10 +113,36 @@ const FALLBACKS: Choice[] = [
   },
 ];
 
-/** Picks up to 3 distinct weighted options; falls back to heal/ryō when everything is maxed. */
+/** Endless upgrades so the build keeps growing once jutsus and passives are maxed. */
+function masteryChoices(g: Game, weight: number): Choice[] {
+  return Object.entries(MASTERY)
+    .filter(([id, m]) => (g.actor.mastery[id] ?? 0) < m.cap)
+    .map(([id, m]) => ({
+      key: `m:${id}`,
+      title: m.name,
+      tag: `Maestría${g.actor.mastery[id] ? ` · ${g.actor.mastery[id] + 1}` : ''}`,
+      isNew: false,
+      desc: m.desc,
+      icon: m.icon,
+      color: m.color,
+      weight,
+      apply: (game: Game) => {
+        const h = game.actor;
+        h.mastery[id] = (h.mastery[id] ?? 0) + 1;
+        h.refreshStats();
+        if (id === 'vida') game.heal(10);
+      },
+    }));
+}
+
+/** Picks up to 3 distinct weighted options. The signature jutsu is always offered until learned. */
 export function rollChoices(g: Game): Choice[] {
-  const pool = allChoices(g);
+  const base = allChoices(g);
+  // Mastery shows up now and then early, and takes over once the build is complete.
+  const pool = [...base, ...masteryChoices(g, base.length >= 3 ? 0.12 : 1)];
   const picked: Choice[] = [];
+  const sig = pool.findIndex((c) => c.key === `j:${g.char.start}` && c.isNew);
+  if (sig >= 0) picked.push(pool.splice(sig, 1)[0]);
   while (picked.length < 3 && pool.length) {
     const total = pool.reduce((s, c) => s + c.weight, 0);
     let roll = Math.random() * total;

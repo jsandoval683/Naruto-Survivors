@@ -13,6 +13,7 @@
   <body>
     <canvas id="game"></canvas>
     <button id="pauseBtn" class="hidden" aria-label="Pausa">❚❚</button>
+    <button id="soundBtn" class="sound-btn" aria-label="Sonido">♪</button>
     <div id="waitNote" class="wait-note hidden"></div>
 
     <section id="menu" class="screen">
@@ -78,6 +79,10 @@
       <div class="panel">
         <h2>Pausa</h2>
         <div id="pauseInfo"></div>
+        <div class="audio-ctl">
+          <label>Música <input type="range" id="volMusic" min="0" max="1" step="0.05" /></label>
+          <label>Efectos <input type="range" id="volSfx" min="0" max="1" step="0.05" /></label>
+        </div>
         <div class="row">
           <button id="resumeBtn" class="primary">Continuar</button>
           <button id="quitBtn" class="secondary">Abandonar</button>

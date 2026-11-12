@@ -1,6 +1,7 @@
 /** Pixel-art ground for each arc: generated tiles plus scattered decorations. */
 import type { SceneId } from '../game/timeline';
-import { cached, fromRows, shade } from './pixel';
+import { obstaclesNear, type Obstacle } from '../game/obstacles';
+import { boulderSprite, cached, crystalSprite, fromRows, shade } from './pixel';
 
 const TILE_PX = 32; // native pixels per tile
 export const TILE = 64; // world units per tile (2 world units per pixel)
@@ -24,6 +25,10 @@ const SCENES: Record<SceneId, Palette> = {
   uchiha: { base: '#3a3540', dither: ['#433d4a', '#322e38'], tuft: null, crack: '#26232b', ripple: null, decor: ['pillar', 'rubble', 'rubble', 'rock', 'crater'] },
   konoha: { base: '#3d6b33', dither: ['#457a39', '#36602e'], tuft: '#5a9a48', crack: null, ripple: null, decor: ['tree', 'bush', 'flowers', 'flowers', 'rock', 'patch', 'stump'] },
   crater: { base: '#7a6048', dither: ['#86694e', '#6a5240'], tuft: null, crack: '#4a3a2c', ripple: null, decor: ['crater', 'rubble', 'rubble', 'rock', 'pillar'] },
+  dim_lava: { base: '#3a1a14', dither: ['#4a2018', '#2a1210'], tuft: null, crack: '#ff6a1a', ripple: null, decor: ['crater', 'rubble', 'rock', 'skull'] },
+  dim_hielo: { base: '#cfe6f4', dither: ['#e2f2fb', '#b8d6ea'], tuft: null, crack: '#9fc4dc', ripple: '#f4fbff', decor: ['rock', 'rubble'] },
+  dim_gravedad: { base: '#2a2440', dither: ['#332b4e', '#221d36'], tuft: null, crack: '#5a4a8a', ripple: null, decor: ['crater', 'rubble', 'rock'] },
+  dim_arena: { base: '#caa66a', dither: ['#d8b67c', '#b8945a'], tuft: null, crack: null, ripple: '#e3c68e', decor: ['dune', 'dune', 'rock', 'skull'] },
   guerra: { base: '#9a8a6a', dither: ['#a89878', '#8a7a5a'], tuft: '#7a6a4a', crack: '#6a5a44', ripple: null, decor: ['spear', 'rubble', 'crater', 'rock', 'skull', 'spear'] },
 };
 
@@ -203,5 +208,63 @@ export function drawGround(ctx: CanvasRenderingContext2D, cx: number, cy: number
       }
     }
   }
+  drawObstacles(ctx, cx, cy, w, h, scene);
   ctx.imageSmoothingEnabled = smoothing;
+}
+
+const BOULDER: Record<string, string> = {
+  desierto: '#b08a5a',
+  bosque: '#7a7e86',
+  uchiha: '#5e5868',
+  konoha: '#8a8e96',
+  crater: '#6a5444',
+  guerra: '#8a8070',
+  dim_gravedad: '#6a6a8a',
+  dim_arena: '#c9a468',
+  dim_hielo: '#a8c8e0',
+};
+
+const obstacleScratch: Obstacle[] = [];
+
+/** Solid obstacles: base sits on the collision circle, the sprite rises above it. */
+function drawObstacles(ctx: CanvasRenderingContext2D, cx: number, cy: number, w: number, h: number, scene: SceneId): void {
+  const list = obstaclesNear(cx, cy, Math.max(w, h) / 2 + 80, scene, obstacleScratch).sort((a, b) => a.y - b.y);
+  for (const o of list) {
+    if (Math.abs(o.x - cx) > w / 2 + 80 || Math.abs(o.y - cy) > h / 2 + 120) continue;
+    let img: HTMLCanvasElement;
+    let width = o.r * 2.5;
+    switch (o.kind) {
+      case 'tree':
+        img = DECOR.tree();
+        width = o.r * 3.6;
+        break;
+      case 'pillar':
+        img = DECOR.pillar();
+        width = o.r * 2.4;
+        break;
+      case 'cactus':
+        img = DECOR.cactus();
+        width = o.r * 2.6;
+        break;
+      case 'stump':
+        img = DECOR.stump();
+        width = o.r * 2.6;
+        break;
+      case 'crystal':
+        img = crystalSprite();
+        width = o.r * 2.8;
+        break;
+      case 'obsidian':
+        img = boulderSprite('#2a2030', '#ff7a2a');
+        break;
+      default:
+        img = boulderSprite(BOULDER[scene] ?? '#8a8e96');
+    }
+    const height = (img.height / img.width) * width;
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(o.x, o.y + o.r * 0.35, o.r * 1.1, o.r * 0.45, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.drawImage(img, o.x - width / 2, o.y + o.r * 0.5 - height, width, height);
+  }
 }

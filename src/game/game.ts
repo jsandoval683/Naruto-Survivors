@@ -7,6 +7,7 @@ import { JUTSUS, type JutsuId, type Weapon } from './jutsus';
 import { rollChoices, type Choice } from './levelup';
 import { affinity, type Nature } from './natures';
 import type { PassiveId } from './passives';
+import { collide, insideObstacle } from './obstacles';
 import { Spawner } from './spawner';
 import { Director, type Arc, type SceneId } from './timeline';
 import type { RunSummary } from '../meta/summary';
@@ -14,8 +15,8 @@ import type { Effect, Enemy, Field, FloatText, Hazard, Pickup, PickupKind, Playe
 
 export type { RunOptions, SpecialPrompt } from './hero';
 
-/** Madara arrives at 20:00; beating him wins the run. */
-export const FINAL_TIME = 20 * 60;
+/** Kaguya arrives at 30:00; sealing her wins the run. */
+export const FINAL_TIME = 30 * 60;
 const BASE_SPEED = 135;
 const MAX_TEXTS = 120;
 const MAX_XP_GEMS = 300;
@@ -30,6 +31,16 @@ const TENTEN_EVERY = 240;
 const PILL_TIME = 12;
 
 export type GameState = 'play' | 'levelup' | 'paused' | 'over';
+
+/** Kaguya's dimensions, each with its own hazard. */
+export type Dimension = 'lava' | 'hielo' | 'gravedad' | 'arena';
+
+const DIMENSIONS: Record<Dimension, { name: string; sub: string }> = {
+  lava: { name: 'Dimensión de lava', sub: 'El suelo arde: no te quedes quieto' },
+  hielo: { name: 'Dimensión de hielo', sub: 'Resbalas al moverte y caen picos de hielo' },
+  gravedad: { name: 'Dimensión de gravedad', sub: 'Te mueves más lento y Kaguya te atrae' },
+  arena: { name: 'Dimensión del desierto', sub: 'Visión reducida y arenas movedizas' },
+};
 
 export interface GameCallbacks {
   onLevelUp(): void;
@@ -51,8 +62,9 @@ function compact<T extends { dead: boolean }>(a: T[]): void {
 
 export function xpForLevel(level: number): number {
   const n = level - 1;
-  // Gentle early, quadratic late so a strong build can't snowball forever.
-  return Math.floor(5 + n * 6 + 0.4 * n * n);
+  // Gentle early, steeper later: power keeps growing until minute 30 instead of
+  // maxing out around minute 10.
+  return Math.floor(5 + n * 6 + 0.4 * n * n + 0.006 * n * n * n);
 }
 
 /**
@@ -97,6 +109,10 @@ export class Game {
   biju = 0;
   bijuSpawned = 0;
   wishUsed = false;
+
+  /** Active Kaguya dimension (null outside her event). */
+  dimension: Dimension | null = null;
+  private dimTimer = 0;
 
   /** Visible world size; set by the renderer on resize. */
   viewW = 960;
@@ -338,9 +354,16 @@ export class Game {
 
   private placeNear(kind: PickupKind, value: number, min: number, max: number): void {
     const h = this.aliveHeroes[Math.floor(Math.random() * this.aliveHeroes.length)] ?? this.heroes[0];
-    const a = Math.random() * Math.PI * 2;
-    const d = min + Math.random() * (max - min);
-    this.drop(kind, h.body.x + Math.cos(a) * d, h.body.y + Math.sin(a) * d, value);
+    let x = h.body.x;
+    let y = h.body.y;
+    for (let tries = 0; tries < 12; tries++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = min + Math.random() * (max - min);
+      x = h.body.x + Math.cos(a) * d;
+      y = h.body.y + Math.sin(a) * d;
+      if (!insideObstacle(x, y, this.scene, 30)) break;
+    }
+    this.drop(kind, x, y, value);
   }
 
   private updateWorldEvents(): void {
@@ -351,6 +374,8 @@ export class Game {
     }
     if (this.t >= this.nextTenten && this.t < FINAL_TIME) {
       this.nextTenten += TENTEN_EVERY;
+      // Only one stall at a time: Tenten packs up and moves.
+      for (const pk of this.pickups) if (pk.kind === 'tenten') pk.dead = true;
       this.placeNear('tenten', 0, 300, 450);
       if (!this.banner) this.announce('La tienda de Tenten está cerca', 'Sigue la flecha verde');
     }
@@ -434,8 +459,68 @@ export class Game {
   enterArc(arc: Arc, travel: boolean): void {
     this.scene = arc.scene;
     this.arcName = arc.name;
+    if (!arc.minions.length) {
+      // The final event clears the battlefield.
+      for (const e of this.enemies) {
+        if (e.boss) continue;
+        e.dead = true;
+        this.puff(e.x, e.y, '#b49cff', e.r * 1.4);
+      }
+    }
     this.announce(arc.name, travel ? 'Nuevo arco' : 'Sobrevive');
     if (travel) this.effects.push({ kind: 'flash', x: 0, y: 0, r: 0, life: 0.8, max: 0.8, color: '0,0,0' });
+  }
+
+  /** Kaguya moves everyone to another dimension. */
+  setDimension(d: Dimension): void {
+    this.dimension = d;
+    this.scene = `dim_${d}` as SceneId;
+    this.dimTimer = 1.5;
+    this.announce(DIMENSIONS[d].name, DIMENSIONS[d].sub);
+    this.effects.push({ kind: 'flash', x: 0, y: 0, r: 0, life: 0.7, max: 0.7, color: '255,255,255' });
+    for (const h of this.heroes) {
+      h.body.vx = 0;
+      h.body.vy = 0;
+    }
+  }
+
+  private updateDimension(dt: number): void {
+    if (!this.dimension) return;
+    this.dimTimer -= dt;
+    if (this.dimTimer > 0) return;
+    const alive = this.aliveHeroes;
+    const h = alive[Math.floor(Math.random() * alive.length)];
+    if (!h) return;
+    const p = h.body;
+    const near = (d: number) => {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.random() * d;
+      return { x: p.x + Math.cos(a) * r, y: p.y + Math.sin(a) * r };
+    };
+    switch (this.dimension) {
+      case 'lava': {
+        this.dimTimer = 2.2;
+        const q = near(140);
+        this.zone(q.x, q.y, 55, 0.8, 12, '#ff6a3c', { linger: 5 });
+        break;
+      }
+      case 'hielo':
+        this.dimTimer = 3;
+        for (let i = 0; i < 3; i++) {
+          const q = near(160);
+          this.zone(q.x, q.y, 34, 0.9, 24, '#bfe8ff');
+        }
+        break;
+      case 'arena': {
+        this.dimTimer = 2.5;
+        const q = near(150);
+        this.zone(q.x, q.y, 60, 0.6, 3, '#c9a468', { linger: 4, slow: 1.2 });
+        break;
+      }
+      case 'gravedad':
+        this.dimTimer = 999;
+        break;
+    }
   }
 
   // ---------- spawning ----------
@@ -451,7 +536,7 @@ export class Game {
   spawnEnemy(kind: MinionKind, x: number, y: number): void {
     const d = ENEMIES[kind];
     const minutes = this.t / 60;
-    const hp = d.hp * (1 + minutes * 0.25 + minutes * minutes * 0.03) * (1 + 0.5 * this.partyScale);
+    const hp = d.hp * (1 + minutes * 0.25 + minutes * minutes * 0.03 + minutes * minutes * minutes * 0.0015) * (1 + 0.5 * this.partyScale);
     const natures = this.director.arc.natures;
     this.enemies.push({
       id: this.nextEnemyId++,
@@ -476,12 +561,13 @@ export class Game {
     });
   }
 
-  spawnBoss(id: BossId, index = 0, count = 1): void {
+  spawnBoss(id: BossId, index = 0, count = 1, opts: { hpMult?: number; echo?: boolean } = {}): void {
     const d = BOSSES[id];
     const a = (index / count) * Math.PI * 2 - Math.PI / 2;
     const r = this.spawnRadius * 0.85;
     const anchor = this.aliveHeroes[0] ?? this.heroes[0];
-    const hp = d.hp * (1 + 0.6 * this.partyScale);
+    const hp = d.hp * (1 + 0.6 * this.partyScale) * (opts.hpMult ?? 1);
+    const name = opts.echo ? `Eco de ${d.name}` : d.name;
     this.enemies.push({
       id: this.nextEnemyId++,
       kind: 'boss',
@@ -502,13 +588,15 @@ export class Game {
       dead: false,
       vx: 0,
       vy: 0,
-      boss: { id, name: d.name, lookId: d.lookId, brain: d.brain(), hearts: d.hearts, final: d.final },
+      boss: { id, name, lookId: d.lookId, brain: d.brain(), hearts: d.hearts, final: d.final, echo: opts.echo },
     });
-    if (index === 0) this.announce(count > 1 ? `¡${count} enemigos poderosos!` : `¡${d.name}!`, count > 1 ? (d.name.split(' ')[0] === 'Camino' ? 'Los Seis Caminos de Pain' : 'Llegan los jefes') : 'Ha aparecido un jefe');
+    if (opts.echo) this.announce(`¡${name}!`, 'Kaguya invoca a un enemigo del pasado');
+    else if (index === 0) this.announce(count > 1 ? `¡${count} enemigos poderosos!` : `¡${d.name}!`, count > 1 ? (d.name.split(' ')[0] === 'Camino' ? 'Los Seis Caminos de Pain' : 'Llegan los jefes') : 'Ha aparecido un jefe');
   }
 
   /** Enemy bullet toward an angle. */
   bullet(x: number, y: number, angle: number, speed: number, dmg: number, color: string, extra: { homing?: number; burst?: number; life?: number; r?: number } = {}): void {
+    dmg *= this.hazardScale;
     this.hazards.push({
       kind: 'bullet',
       x,
@@ -526,7 +614,13 @@ export class Game {
   }
 
   /** Telegraphed ground attack: fills up for `delay` seconds, then hits whoever stands inside. */
+  /** Enemy attacks hurt more as the run goes on (×1.5 at 20:00, ×2 at 30:00). */
+  get hazardScale(): number {
+    return 1 + Math.max(0, (this.t - 600) / 1200);
+  }
+
   zone(x: number, y: number, r: number, delay: number, dmg: number, color: string, extra: { linger?: number; push?: number; slow?: number } = {}): void {
+    dmg *= this.hazardScale;
     this.hazards.push({ kind: 'zone', x, y, vx: 0, vy: 0, r, dmg, life: delay + (extra.linger ?? 0), color, dead: false, delay, maxDelay: delay, ...extra });
   }
 
@@ -663,6 +757,11 @@ export class Game {
 
   private killBoss(e: Enemy): void {
     const b = e.boss!;
+    if (b.echo) {
+      this.effects.push({ kind: 'ring', x: e.x, y: e.y, r: 90, life: 0.5, max: 0.5, color: '#b49cff' });
+      this.drop('xp', e.x, e.y, 20);
+      return;
+    }
     if (!this.bossesDefeated.includes(b.id)) this.bossesDefeated.push(b.id);
     this.effects.push({ kind: 'boom', x: e.x, y: e.y, r: 120, life: 0.6, max: 0.6, color: '#ffd23f' });
     this.drop('chest', e.x, e.y, 3);
@@ -724,6 +823,7 @@ export class Game {
 
     this.director.update(this);
     this.updateWorldEvents();
+    this.updateDimension(dt);
     if (this.tint) {
       this.tint.life -= dt;
       if (this.tint.life <= 0) this.tint = null;
@@ -802,17 +902,40 @@ export class Game {
     const s = h.stats;
     const ax = h.input.axis();
     p.moving = ax.x !== 0 || ax.y !== 0;
-    const slowMul = p.slow > 0 ? 0.5 : 1;
+    const slowMul = (p.slow > 0 ? 0.5 : 1) * (this.dimension === 'gravedad' ? 0.65 : 1);
+    const spd = BASE_SPEED * s.speed * slowMul;
+    if (this.dimension === 'hielo') {
+      // Ice: velocity follows the input slowly, so you slide.
+      const k = Math.min(1, dt * 2.2);
+      p.vx = (p.vx ?? 0) + (ax.x * spd - (p.vx ?? 0)) * k;
+      p.vy = (p.vy ?? 0) + (ax.y * spd - (p.vy ?? 0)) * k;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    } else if (p.moving) {
+      p.x += ax.x * spd * dt;
+      p.y += ax.y * spd * dt;
+    }
     if (p.moving) {
-      p.x += ax.x * BASE_SPEED * s.speed * slowMul * dt;
-      p.y += ax.y * BASE_SPEED * s.speed * slowMul * dt;
       const l = Math.hypot(ax.x, ax.y);
       p.facingX = ax.x / l;
       p.facingY = ax.y / l;
       p.anim += dt;
     }
+    if (this.dimension === 'gravedad') {
+      const k = this.enemies.find((e) => e.boss?.id === 'kaguya' && !e.dead);
+      if (k) {
+        const dx = k.x - p.x;
+        const dy = k.y - p.y;
+        const d = Math.hypot(dx, dy) || 1;
+        if (d > 60) {
+          p.x += (dx / d) * 55 * dt;
+          p.y += (dy / d) * 55 * dt;
+        }
+      }
+    }
     p.x += p.kbx * dt;
     p.y += p.kby * dt;
+    collide(p, p.r * 0.8, this.scene);
     const decay = Math.exp(-6 * dt);
     p.kbx *= decay;
     p.kby *= decay;
@@ -897,6 +1020,7 @@ export class Game {
 
       e.x += (vx + e.kbx) * dt;
       e.y += (vy + e.kby) * dt;
+      if (e.kind !== 'crow') collide(e, e.r * 0.85, this.scene);
       e.kbx *= decay;
       e.kby *= decay;
       if (e.flash > 0) e.flash -= dt;
@@ -1019,9 +1143,12 @@ export class Game {
           if (!h.linger) h.dead = true;
         }
       } else if (h.linger) {
+        const burns = h.color === '#1a0a24' || h.color === '#ff6a3c' || h.color === '#ff7a2a';
         for (const hero of alive) {
           const p = hero.body;
-          if (Math.hypot(p.x - h.x, p.y - h.y) < h.r + p.r * 0.5) this.hurtHero(hero, h.dmg, 'fuego');
+          if (Math.hypot(p.x - h.x, p.y - h.y) >= h.r + p.r * 0.5) continue;
+          if (h.slow) p.slow = Math.max(p.slow, 0.4);
+          this.hurtHero(hero, h.dmg, burns ? 'fuego' : 'zona');
         }
       }
       if (h.life <= 0) h.dead = true;

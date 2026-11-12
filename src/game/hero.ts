@@ -4,6 +4,27 @@ import type { Choice } from './levelup';
 import { computeStats, type PassiveId } from './passives';
 import type { Player, Stats } from './types';
 
+export const MASTERY: Record<string, { name: string; desc: string; icon: string; color: string; cap: number }> = {
+  poder: { name: 'Poder interior', desc: '+4% de daño.', icon: '力', color: '#e5534b', cap: 40 },
+  vida: { name: 'Cuerpo de acero', desc: '+10 de vida máxima y te cura 10.', icon: '体', color: '#5cc96b', cap: 40 },
+  recarga: { name: 'Flujo de chakra', desc: '-3% de recarga.', icon: '気', color: '#4fb3ff', cap: 10 },
+  area: { name: 'Expansión', desc: '+5% de área.', icon: '仙', color: '#f39c32', cap: 10 },
+  critico: { name: 'Ojo afilado', desc: '+2% de crítico.', icon: '写', color: '#e01b1b', cap: 10 },
+  coraza: { name: 'Piel de piedra', desc: '+2% de reducción de daño.', icon: '盾', color: '#c9d1d9', cap: 8 },
+};
+
+function masteryMods(m: Record<string, number>): StatMods {
+  const n = (id: string) => m[id] ?? 0;
+  return {
+    dmg: 1 + 0.04 * n('poder'),
+    maxHp: 10 * n('vida'),
+    cd: 1 - 0.03 * n('recarga'),
+    area: 1 + 0.05 * n('area'),
+    crit: 0.02 * n('critico'),
+    armor: 0.02 * n('coraza'),
+  };
+}
+
 /** Anything that can steer a hero: the keyboard, a network client or the dev bot. */
 export interface Controller {
   axis(): { x: number; y: number };
@@ -38,6 +59,8 @@ export class Hero {
   passives = new Map<PassiveId, number>();
   stats: Stats;
   extraMods: StatMods[] = [];
+  /** Endless "mastery" upgrades taken once the build is complete (id → times taken). */
+  mastery: Record<string, number> = {};
   pillTime = 0;
   pendingLevelUps = 0;
   specials: SpecialPrompt[] = [];
@@ -63,11 +86,10 @@ export class Hero {
     this.rerolls = opts.rerolls ?? 2;
     this.stats = this.computeStats();
     this.body.hp = this.stats.maxHp;
-    this.addJutsu(this.char.start);
-    if (opts.extraJutsu) {
-      const others = this.char.pool.filter((j) => j !== this.char.start);
-      this.addJutsu(others[Math.floor(Math.random() * others.length)]);
-    }
+    // Everyone starts with the Kunai; the signature jutsu is guaranteed at the first level-up
+    // (or from the start with the "Repertorio" permanent upgrade).
+    this.addJutsu('kunai');
+    if (opts.extraJutsu && this.char.start !== 'kunai') this.addJutsu(this.char.start);
   }
 
   get transform(): Transform | null {
@@ -87,6 +109,7 @@ export class Hero {
     if (this.opts.mods) mods.push(this.opts.mods);
     for (let i = 0; i <= this.form; i++) mods.push(this.char.transforms[i].mods);
     mods.push(...this.extraMods);
+    mods.push(masteryMods(this.mastery));
     if (this.pillTime > 0) mods.push(PILL_MODS);
     const s = computeStats(this.passives, mods);
     s.xp *= this.xpMult;

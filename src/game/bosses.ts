@@ -6,7 +6,8 @@ export type BossId =
   | 'deidara' | 'sasori' | 'hidan' | 'kakuzu' | 'itachi'
   | 'path0' | 'path1' | 'path2' | 'path3' | 'path4' | 'path5'
   | 'pain' | 'raikage' | 'tsuchikage' | 'mizukage' | 'madara'
-  | 'orochimaru' | 'kisame' | 'konan' | 'kabuto';
+  | 'orochimaru' | 'kisame' | 'konan' | 'kabuto'
+  | 'obito' | 'madara_rikudo' | 'kaguya' | 'zetsu_negro';
 
 export interface BossDef {
   name: string;
@@ -445,6 +446,138 @@ const kabuto = (): BossBrain => {
   };
 };
 
+function ringWithGap(g: Game, e: Enemy, n: number, gap: number, halfWidth: number, speed: number, dmg: number, color: string): void {
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    let diff = Math.abs(a - gap) % (Math.PI * 2);
+    if (diff > Math.PI) diff = Math.PI * 2 - diff;
+    if (diff < halfWidth) continue;
+    g.bullet(e.x, e.y, a, speed, dmg, color, { life: 5, r: 7 });
+  }
+}
+
+const obito = (): BossBrain => {
+  const orbs = new Every(4, 2);
+  const ring = new Every(8, 5);
+  const spikes = new Every(6, 3);
+  return {
+    update(g, e, dt) {
+      chase(g, e);
+      if (orbs.tick(dt)) fan(g, e, 4, 1.4, 150, 18, '#2a2430', { homing: 1.1, life: 4, r: 9 });
+      if (ring.tick(dt)) ringWithGap(g, e, 32, Math.random() * Math.PI * 2, 0.7, 170, 16, '#e8e4f0');
+      if (spikes.tick(dt)) {
+        // Wood Release: spikes erupt along a line towards you.
+        const { a } = toPlayer(g, e);
+        for (let i = 1; i <= 7; i++) g.zone(e.x + Math.cos(a) * i * 40, e.y + Math.sin(a) * i * 40, 24, 0.6 + i * 0.06, 20, '#7a5a3a');
+      }
+    },
+  };
+};
+
+const madaraRikudo = (): BossBrain => {
+  const limbo = new Every(5, 3);
+  const meteors = new Every(10, 6);
+  const orbs = new Every(4, 2);
+  return {
+    update(g, e, dt) {
+      chase(g, e, 1.1);
+      if (limbo.tick(dt)) {
+        // Limbo: invisible shadows strike all around you.
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * Math.PI * 2 + Math.random();
+          g.zone(g.player.x + Math.cos(a) * 55, g.player.y + Math.sin(a) * 55, 38, 0.7, 24, '#2a2430');
+        }
+      }
+      if (meteors.tick(dt)) {
+        g.announce('¡Lluvia de meteoritos!');
+        for (let i = 0; i < 3; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const r = 40 + Math.random() * 140;
+          g.zone(g.player.x + Math.cos(a) * r, g.player.y + Math.sin(a) * r, 110, 1.8, 45, '#8a5a3a');
+        }
+      }
+      if (orbs.tick(dt)) fan(g, e, 3, 1.2, 160, 18, '#2a2430', { homing: 1, life: 4, r: 9 });
+    },
+  };
+};
+
+const zetsuNegro = (): BossBrain => {
+  const sink = new Every(5, 3);
+  const grab = new Every(7, 4);
+  return {
+    update(g, e, dt) {
+      chase(g, e);
+      if (sink.tick(dt)) {
+        // Sinks into the ground and comes up behind you.
+        g.puff(e.x, e.y, '#141414', 30);
+        const p = g.player;
+        e.x = p.x - p.facingX * 110;
+        e.y = p.y - p.facingY * 110;
+        g.puff(e.x, e.y, '#141414', 30);
+      }
+      if (grab.tick(dt)) g.zone(g.player.x, g.player.y, 50, 0.8, 15, '#141414', { slow: 2 });
+    },
+  };
+};
+
+const kaguya = (): BossBrain => {
+  const dims = ['lava', 'hielo', 'gravedad', 'arena'] as const;
+  let di = -1;
+  const shift = new Every(25, 0.01);
+  const bones = new Every(3, 2);
+  const ring = new Every(7, 4);
+  const cross = new Every(9, 6);
+  const blink = new Every(12, 10);
+  const echo = new Every(45, 20);
+  const echoes: BossId[] = ['itachi', 'pain', 'kisame', 'orochimaru', 'sasori', 'deidara', 'kakuzu'];
+  let secondWave = -1;
+  let gap = 0;
+  let enraged = false;
+  return {
+    update(g, e, dt) {
+      if (!enraged && e.hp < e.maxHp / 2) {
+        enraged = true;
+        g.announce('Kaguya se enfurece', 'Sus ataques son más rápidos');
+      }
+      const rate = enraged ? 1.35 : 1;
+      kite(g, e, 230);
+      if (shift.tick(dt)) {
+        di = (di + 1) % dims.length;
+        g.setDimension(dims[di]);
+      }
+      // Ash bones: fast and aimed. Keep moving.
+      if (bones.tick(dt, rate)) fan(g, e, 5, 0.5, 330, 28, '#f4f1ea', { r: 5 });
+      // Expanding ring with a gap: find it and slip through.
+      if (ring.tick(dt, rate)) {
+        gap = Math.random() * Math.PI * 2;
+        ringWithGap(g, e, 40, gap, 0.38, 150, 26, '#b49cff');
+        secondWave = 0.6;
+      }
+      if (secondWave > 0) {
+        secondWave -= dt;
+        if (secondWave <= 0) ringWithGap(g, e, 40, gap + 0.5, 0.38, 150, 26, '#b49cff');
+      }
+      // Cross of truth: a telegraphed cross over your position.
+      if (cross.tick(dt, rate)) {
+        const p = g.player;
+        g.announce('¡Cruz de la verdad!', 'Sal de las líneas');
+        for (let i = -8; i <= 8; i++) {
+          g.zone(p.x + i * 45, p.y, 28, 1.1, 45, '#e8e4f0');
+          if (i) g.zone(p.x, p.y + i * 45, 28, 1.1, 45, '#e8e4f0');
+        }
+      }
+      if (blink.tick(dt)) {
+        g.puff(e.x, e.y, '#e8e4f0', 34);
+        const a = Math.random() * Math.PI * 2;
+        e.x = g.player.x + Math.cos(a) * 200;
+        e.y = g.player.y + Math.sin(a) * 200;
+        g.puff(e.x, e.y, '#e8e4f0', 34);
+      }
+      if (echo.tick(dt)) g.spawnBoss(echoes[Math.floor(Math.random() * echoes.length)], 0, 1, { hpMult: 0.35, echo: true });
+    },
+  };
+};
+
 export const BOSSES: Record<BossId, BossDef> = {
   deidara: { name: 'Deidara', lookId: 'deidara', hp: 1100, speed: 70, r: 22, dmg: 12, nature: 'tierra', brain: deidara },
   sasori: { name: 'Sasori', lookId: 'sasori', hp: 2400, speed: 55, r: 22, dmg: 14, nature: 'viento', brain: sasori },
@@ -464,6 +597,10 @@ export const BOSSES: Record<BossId, BossDef> = {
   orochimaru: { name: 'Orochimaru', lookId: 'orochimaru', hp: 4500, speed: 65, r: 22, dmg: 16, nature: 'viento', brain: orochimaru },
   kisame: { name: 'Kisame', lookId: 'kisame', hp: 10000, speed: 70, r: 24, dmg: 18, nature: 'agua', brain: kisame },
   konan: { name: 'Konan', lookId: 'konan', hp: 12000, speed: 65, r: 21, dmg: 18, nature: 'viento', brain: konan },
-  kabuto: { name: 'Kabuto', lookId: 'kabuto', hp: 20000, speed: 65, r: 22, dmg: 22, nature: 'agua', brain: kabuto },
-  madara: { name: 'Madara Uchiha', lookId: 'madara', hp: 120000, speed: 70, r: 28, dmg: 30, nature: 'fuego', final: true, brain: madara },
+  kabuto: { name: 'Kabuto', lookId: 'kabuto', hp: 50000, speed: 65, r: 22, dmg: 22, nature: 'agua', brain: kabuto },
+  madara: { name: 'Madara Uchiha', lookId: 'madara', hp: 160000, speed: 70, r: 28, dmg: 30, nature: 'fuego', brain: madara },
+  obito: { name: 'Óbito (Jinchūriki del Juubi)', lookId: 'obito', hp: 130000, speed: 75, r: 26, dmg: 28, nature: 'neutral', brain: obito },
+  madara_rikudo: { name: 'Madara de los Seis Caminos', lookId: 'madara_rikudo', hp: 190000, speed: 75, r: 28, dmg: 32, nature: 'neutral', brain: madaraRikudo },
+  kaguya: { name: 'Kaguya Ōtsutsuki', lookId: 'kaguya', hp: 1000000, speed: 60, r: 30, dmg: 34, nature: 'neutral', final: true, brain: kaguya },
+  zetsu_negro: { name: 'Zetsu Negro', lookId: 'zetsu_negro', hp: 100000, speed: 70, r: 20, dmg: 20, nature: 'tierra', brain: zetsuNegro },
 };

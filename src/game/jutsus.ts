@@ -674,11 +674,11 @@ class LeonesWeapon extends Weapon {
 // ---------------- Invocación: Gamabunta (Jiraiya) ----------------
 
 const SAPO = [
-  { dmg: 45, r: 100, cd: 3.4 },
-  { dmg: 62, r: 105, cd: 3.2 },
-  { dmg: 62, r: 120, cd: 2.9 },
-  { dmg: 85, r: 130, cd: 2.6 },
-  { dmg: 115, r: 150, cd: 2.3 },
+  { dmg: 42, r: 85, cd: 3.8 },
+  { dmg: 56, r: 90, cd: 3.6 },
+  { dmg: 56, r: 100, cd: 3.3 },
+  { dmg: 74, r: 108, cd: 3.1 },
+  { dmg: 96, r: 120, cd: 2.9 },
 ];
 
 const TOAD_FALL = 0.6;

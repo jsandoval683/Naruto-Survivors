@@ -16,6 +16,8 @@ export interface BossInfo {
   /** Kakuzu-style segmented HP: one nature per heart. */
   hearts?: Nature[];
   final?: boolean;
+  /** Weaker copy summoned by Kaguya (no chest). */
+  echo?: boolean;
 }
 
 export interface Enemy {
@@ -174,4 +176,7 @@ export interface Player {
   slow: number;
   kbx: number;
   kby: number;
+  /** Velocity, only used on ice (movement with inertia). */
+  vx?: number;
+  vy?: number;
 }

@@ -9,6 +9,8 @@ export class Spawner {
   private nextSwarm = SWARM_EVERY * 2;
 
   update(g: Game, dt: number): void {
+    // Kaguya's event has no ordinary enemies.
+    if (!g.director.arc.minions.length) return;
     const t = g.t;
     // Enemies per second: gentle first minutes, then accelerating after minute 4.
     const late = t > 240 ? Math.pow((t - 240) / 60, 1.5) * 1.5 : 0;

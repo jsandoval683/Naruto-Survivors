@@ -1,3 +1,4 @@
+import { AudioDirector, Sound } from './audio/sound';
 import { Input } from './core/input';
 import { loadSave, onSaveWritten, writeSave } from './core/save';
 import { CHARACTERS, CHARACTER_ORDER, type CharacterDef, type CharacterId } from './game/characters';
@@ -41,6 +42,41 @@ const screens = {
   gameover: $('gameover'),
 };
 const pauseBtn = $('pauseBtn');
+
+// ---------------- sound ----------------
+
+const sound = new Sound();
+const audio = new AudioDirector(sound);
+if (import.meta.env.DEV) (window as unknown as { __sound: Sound }).__sound = sound;
+const soundBtn = $('soundBtn');
+function renderSoundBtn(): void {
+  soundBtn.textContent = sound.settings.muted ? '✕' : '♪';
+  soundBtn.title = sound.settings.muted ? 'Activar sonido' : 'Silenciar';
+  soundBtn.classList.toggle('muted', sound.settings.muted);
+}
+soundBtn.addEventListener('click', () => {
+  sound.settings.muted = !sound.settings.muted;
+  sound.applySettings();
+  renderSoundBtn();
+});
+renderSoundBtn();
+const volMusic = $<HTMLInputElement>('volMusic');
+const volSfx = $<HTMLInputElement>('volSfx');
+volMusic.value = String(sound.settings.music);
+volSfx.value = String(sound.settings.sfx);
+volMusic.addEventListener('input', () => {
+  sound.settings.music = Number(volMusic.value);
+  sound.applySettings();
+});
+volSfx.addEventListener('input', () => {
+  sound.settings.sfx = Number(volSfx.value);
+  sound.applySettings();
+  sound.play('coin');
+});
+// Every button gives a little click.
+document.addEventListener('click', (e) => {
+  if ((e.target as HTMLElement).closest('button')) sound.play('click');
+});
 const waitNote = $('waitNote');
 
 /** Solo run (simulated here) … */
@@ -225,7 +261,7 @@ function showCharInfo(c: CharacterDef): void {
     : '';
   $('charInfo').innerHTML = `
     <h3>${c.name} <span class="nat" style="color:${NATURE_COLOR[c.nature]}">${NATURE_NAME[c.nature]}</span></h3>
-    <p>Jutsu inicial: <b>${JUTSUS[c.start].name}</b></p>
+    <p>Empieza con <b>Kunai</b> · Jutsu propio: <b>${JUTSUS[c.start].name}</b> (en el primer nivel)</p>
     <p class="muted">${c.trait}</p>
     <ul>${forms}</ul>${skins}`;
   $('charInfo')
@@ -244,7 +280,7 @@ function showLocked(c: CharacterDef): void {
   $('charInfo').innerHTML = `
     <h3>${c.name} 🔒</h3>
     <p>Para desbloquearlo: <b>${c.unlockText}</b>.</p>
-    <p class="muted">Jutsu inicial: ${JUTSUS[c.start].name}</p>`;
+    <p class="muted">Jutsu propio: ${JUTSUS[c.start].name}</p>`;
 }
 
 // ---------------- solo run ----------------
@@ -268,6 +304,7 @@ function startRun(): void {
     },
   ]);
   game.setView(view.w / view.zoom, view.h / view.zoom);
+  audio.reset();
   if (import.meta.env.DEV) (window as unknown as { __game: Game }).__game = game;
   show(null);
 }
@@ -448,7 +485,7 @@ function endRun(win: boolean): void {
   const r = applyRun(save, s);
   writeSave(save);
   void online.submitRun({ char: s.char, time: Math.floor(s.time), kills: s.kills, bosses: s.bosses.length, level: s.level, win });
-  showResults(win ? '¡Has derrotado a Madara!' : 'Has caído', s, r, false);
+  showResults(win ? '¡Has sellado a Kaguya!' : 'Has caído', s, r, false);
 }
 
 $('startBtn').addEventListener('click', startRun);
@@ -497,6 +534,7 @@ const coop = new CoopClient({
   onStart: (you) => {
     game = null;
     net = new NetGame(you);
+    audio.reset();
     show(null);
   },
   onSnap: (s) => net?.onSnap(s),
@@ -511,7 +549,7 @@ const coop = new CoopClient({
     net.over = true;
     const r = applyRun(save, summary);
     writeSave(save);
-    showResults(win ? '¡Habéis derrotado a Madara!' : 'Habéis caído', summary, r, true);
+    showResults(win ? '¡Habéis sellado a Kaguya!' : 'Habéis caído', summary, r, true);
   },
   onClose: () => {
     if (net && !net.over) {
@@ -629,7 +667,10 @@ function frame(now: number): void {
     if (!net.over) sendInput(now);
     net.update(dt, input.axis());
     const v = net.view();
-    if (v) render(ctx, v, view, input);
+    if (v) {
+      render(ctx, v, view, input);
+      audio.observe(v);
+    }
     const others = net.choosing.filter((n) => n !== online.account?.name);
     const waiting = others.length > 0 && !net.prompt && !net.over;
     waitNote.classList.toggle('hidden', !waiting);
@@ -643,9 +684,12 @@ function frame(now: number): void {
       steps++;
     }
     if (steps === 5) acc = 0;
-    render(ctx, gameView(game), view, input);
+    const v = gameView(game);
+    render(ctx, v, view, input);
+    if (game.state === 'play') audio.observe(v);
   } else {
     // Slowly scrolling field behind the menu.
+    sound.setTheme('menu');
     menuT += dt;
     const s = view.dpr * view.zoom;
     const cx = menuT * 18;

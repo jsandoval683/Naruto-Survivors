@@ -4,7 +4,7 @@ import { LOOKS } from '../game/looks';
 import { NATURE_COLOR } from '../game/natures';
 import { BOSSES, type BossId } from '../game/bosses';
 import type { EnemyView, FieldView, HazardView, HeroView, PickupView, ProjectileView, SceneView, SlotView } from '../game/view';
-import { bijuSprite, blastSprite, crowSprite, fireballSprite, gemSprite, headSprite, ITEM_SPRITES, jutsuIcon, lionSprite, rasenganSprite, sandOrbSprite, toadSprite, walkFrame } from './pixel';
+import { bijuSprite, blastSprite, crowSprite, FIRE_PALETTES, fireballSprite, flameSprite, gemSprite, headSprite, ITEM_SPRITES, jutsuIcon, lionSprite, rasenganSprite, sandOrbSprite, toadSprite, walkFrame } from './pixel';
 import { drawLook, drawMinion } from './sprites';
 
 export { drawGround } from './scenery';
@@ -76,7 +76,7 @@ function drawProjectile(ctx: CanvasRenderingContext2D, p: ProjectileView, t: num
   }
   if (p.kind === 'lion') {
     const img = lionSprite(Math.floor(t * 10));
-    stamp(ctx, img, p.x, p.y, (p.r * 2.6) / img.width);
+    stamp(ctx, img, p.x, p.y, (Math.min(p.r, 14) * 2.2) / img.width);
     return;
   }
   if (p.kind === 'crow') {
@@ -89,18 +89,19 @@ function drawProjectile(ctx: CanvasRenderingContext2D, p: ProjectileView, t: num
   }
   if (p.kind === 'fireball') {
     const img = fireballSprite(Math.floor(t * 12), !!p.big);
-    stamp(ctx, img, p.x, p.y, (p.r * 2.6) / img.width);
+    stamp(ctx, img, p.x, p.y, (Math.min(p.r, 14) * 2) / img.width);
     return;
   }
+  // Visual size is capped: area upgrades grow the hitbox, not a screen-filling sprite.
   const img = rasenganSprite(Math.floor(t * 16), !!p.big);
-  ctx.globalAlpha = 0.95;
-  stamp(ctx, img, p.x, p.y, (p.r * (p.big ? 3.6 : 2.8)) / img.width);
+  ctx.globalAlpha = 0.85;
+  stamp(ctx, img, p.x, p.y, (Math.min(p.r, 20) * (p.big ? 2.6 : 2.2)) / img.width);
   ctx.globalAlpha = 1;
 }
 
 function drawField(ctx: CanvasRenderingContext2D, f: FieldView, t: number): void {
   ctx.save();
-  ctx.globalAlpha = Math.min(1, f.life * 3) * 0.8;
+  ctx.globalAlpha = Math.min(1, f.life * 3) * 0.6;
   if (f.style === 'shuriken') {
     ctx.fillStyle = 'rgba(160,215,255,0.22)';
     ctx.beginPath();
@@ -114,16 +115,9 @@ function drawField(ctx: CanvasRenderingContext2D, f: FieldView, t: number): void
       for (let k = 0.45; k < 1; k += 0.12) ctx.fillRect(f.x + Math.cos(a) * f.r * k - 2, f.y + Math.sin(a) * f.r * k - 2, 4, 4);
     }
   } else if (f.style === 'blackfire' || f.style === 'fire') {
-    const fire = f.style === 'fire';
-    for (let i = 0; i < 9; i++) {
-      const a = (i / 9) * Math.PI * 2 + i;
-      const d = f.r * 0.6 * ((i % 3) / 3 + 0.25);
-      const fl = Math.floor((Math.sin(t * 12 + i) + 1) * 2);
-      ctx.fillStyle = fire ? (i % 2 ? '#c0391b' : '#ff7a2a') : i % 2 ? '#1a0a24' : '#3a1050';
-      ctx.fillRect(f.x + Math.cos(a) * d - 4, f.y + Math.sin(a) * d - 8 - fl * 2, 8, 10 + fl * 2);
-      ctx.fillStyle = fire ? '#ffe14d' : '#6b3fa0';
-      ctx.fillRect(f.x + Math.cos(a) * d - 2, f.y + Math.sin(a) * d - 10 - fl * 2, 4, 4);
-    }
+    ctx.restore();
+    drawFireArea(ctx, f.x, f.y, f.r, t, f.style === 'fire' ? 'fire' : 'black', Math.min(1, f.life * 2) * 0.85);
+    return;
   } else {
     ctx.fillStyle = 'rgba(216,178,106,0.5)';
     ctx.beginPath();
@@ -160,21 +154,99 @@ function drawHazard(ctx: CanvasRenderingContext2D, h: HazardView, t: number): vo
     ctx.arc(h.x, h.y, h.r * k, 0, Math.PI * 2);
     ctx.fill();
   } else if (h.linger) {
-    ctx.globalAlpha = Math.min(1, h.life * 2) * 0.7;
-    ctx.fillStyle = h.color;
-    ctx.beginPath();
-    ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
-    ctx.fill();
-    // Pixel flames on top of burning ground.
-    ctx.fillStyle = h.color === '#1a0a24' ? '#6b3fa0' : '#ffb347';
-    for (let i = 0; i < 6; i++) {
-      const a = i * 1.7 + h.x;
-      const fl = Math.floor((Math.sin(t * 10 + i) + 1) * 2);
-      ctx.fillRect(h.x + Math.cos(a) * h.r * 0.55 - 2, h.y + Math.sin(a) * h.r * 0.55 - 6 - fl * 2, 4, 6 + fl * 2);
+    const fade = Math.min(1, h.life * 2);
+    if (h.color === '#1a0a24') drawFireArea(ctx, h.x, h.y, h.r, t, 'black', fade);
+    else if (h.color === '#ff6a3c' || h.color === '#ff7a2a') drawFireArea(ctx, h.x, h.y, h.r, t, 'fire', fade);
+    else {
+      // Other lingering zones (quicksand, ice…): a translucent tinted patch with a rim.
+      ctx.globalAlpha = fade * 0.45;
+      ctx.fillStyle = h.color;
+      ctx.beginPath();
+      ctx.arc(h.x, h.y, h.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = fade * 0.8;
+      ctx.strokeStyle = h.color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
     }
-    ctx.globalAlpha = 1;
   }
 }
+
+/** Burning ground: scorched patch, additive glow, animated flame tongues and rising embers. */
+function drawFireArea(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, t: number, kind: 'fire' | 'black', alpha: number): void {
+  const pal = FIRE_PALETTES[kind];
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const scorch = ctx.createRadialGradient(x, y, 0, x, y, r);
+  scorch.addColorStop(0, kind === 'black' ? 'rgba(8,0,14,0.6)' : 'rgba(35,12,0,0.55)');
+  scorch.addColorStop(0.7, kind === 'black' ? 'rgba(8,0,14,0.3)' : 'rgba(35,12,0,0.25)');
+  scorch.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = scorch;
+  ctx.beginPath();
+  ctx.ellipse(x, y, r, r * 0.78, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Flickering light.
+  ctx.globalCompositeOperation = 'lighter';
+  const flick = (0.16 + 0.07 * Math.sin(t * 13 + x * 0.1)) * alpha;
+  const glow = ctx.createRadialGradient(x, y - r * 0.2, 0, x, y - r * 0.2, r * 1.15);
+  glow.addColorStop(0, kind === 'black' ? `rgba(120,60,200,${flick})` : `rgba(255,140,40,${flick})`);
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(x, y - r * 0.2, r * 1.15, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  // Flame tongues on a golden-angle spiral, back to front.
+  const n = Math.max(5, Math.min(22, Math.round((r * r) / 650)));
+  const flames: { fx: number; fy: number; i: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = i * 2.39996;
+    const d = r * 0.82 * Math.sqrt((i + 0.5) / n);
+    flames.push({ fx: x + Math.cos(a) * d, fy: y + Math.sin(a) * d * 0.75, i });
+  }
+  flames.sort((p, q) => p.fy - q.fy);
+  for (const f of flames) {
+    const img = flameSprite(kind, Math.floor(t * 12 + f.i * 1.7));
+    const px = 1.7 * (0.75 + ((f.i * 37) % 5) / 10);
+    ctx.drawImage(img, f.fx - (img.width * px) / 2, f.fy - img.height * px, img.width * px, img.height * px);
+  }
+  // Embers drifting up.
+  for (let i = 0; i < 7; i++) {
+    const ph = (t * 0.8 + i * 0.37) % 1;
+    ctx.globalAlpha = alpha * (1 - ph);
+    ctx.fillStyle = pal[3];
+    ctx.fillRect(Math.round(x + Math.cos(i * 2.1) * r * 0.6 + Math.sin(t * 3 + i) * 4), Math.round(y - ph * r * 1.1), 2, 2);
+  }
+  ctx.restore();
+}
+
+/** Column of light over a bijū (or Tenten's stall) so it can be spotted from afar. */
+function drawBeacon(ctx: CanvasRenderingContext2D, x: number, y: number, t: number, color: [number, number, number], h: number): void {
+  const [r, g, b] = color;
+  const pulse = 0.55 + Math.sin(t * 3) * 0.2;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const col = ctx.createLinearGradient(0, y - h, 0, y);
+  col.addColorStop(0, `rgba(${r},${g},${b},0)`);
+  col.addColorStop(1, `rgba(${r},${g},${b},${0.35 * pulse})`);
+  ctx.fillStyle = col;
+  ctx.fillRect(x - 13, y - h, 26, h);
+  ctx.fillStyle = `rgba(255,255,255,${0.25 * pulse})`;
+  ctx.fillRect(x - 3, y - h * 0.8, 6, h * 0.8);
+  ctx.restore();
+  // Spinning dashed ring on the ground.
+  ctx.save();
+  ctx.strokeStyle = `rgba(${r},${g},${b},0.8)`;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 6]);
+  ctx.lineDashOffset = -t * 30;
+  ctx.beginPath();
+  ctx.ellipse(x, y + 10, 30, 11, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
 
 function drawPickup(ctx: CanvasRenderingContext2D, pk: PickupView, t: number): void {
   const bob = Math.round(Math.sin(t * 4 + pk.x) * 1.5);
@@ -197,6 +269,7 @@ function drawPickup(ctx: CanvasRenderingContext2D, pk: PickupView, t: number): v
       stamp(ctx, ITEM_SPRITES.pill(), x, y, 2);
       break;
     case 'biju': {
+      drawBeacon(ctx, x, y, t, [255, 140, 60], 240);
       const glow = 0.5 + Math.sin(t * 4) * 0.25;
       ctx.fillStyle = `rgba(255,140,60,${glow * 0.35})`;
       ctx.beginPath();
@@ -210,6 +283,7 @@ function drawPickup(ctx: CanvasRenderingContext2D, pk: PickupView, t: number): v
       break;
     }
     case 'tenten':
+      drawBeacon(ctx, x, y + 12, t, [92, 201, 107], 160);
       stamp(ctx, ITEM_SPRITES.stall(), x, y, 2.6);
       ctx.font = `700 10px ${FONT}`;
       ctx.textAlign = 'center';
@@ -228,6 +302,84 @@ function drawPickup(ctx: CanvasRenderingContext2D, pk: PickupView, t: number): v
       break;
     }
   }
+}
+
+const GROUND_FX = new Set(['boom', 'ring', 'drop', 'toad', 'shadow']);
+
+function drawEffects(ctx: CanvasRenderingContext2D, effects: SceneView['effects'], ground: boolean): void {
+  for (const fx of effects) {
+    if (GROUND_FX.has(fx.kind) !== ground) continue;
+    const k = fx.life / fx.max;
+    ctx.globalAlpha = Math.max(0, k);
+    if (fx.kind === 'boom') {
+      // Pixel blast in phases: white flash, coloured fire ring, grey smoke, with embers.
+      const p = 1 - k;
+      const r = fx.r * (0.55 + p * 0.55);
+      ctx.globalAlpha = Math.min(1, k * 1.8) * 0.6;
+      if (p < 0.25) stamp(ctx, blastSprite('#fff4c2', Math.round((r * 0.45) / 3), false), fx.x, fx.y, 3);
+      ctx.globalAlpha *= 0.35;
+      stamp(ctx, blastSprite(p < 0.55 ? fx.color : '#7a7a84', Math.round((r * 0.85) / 3), false), fx.x, fx.y, 3);
+      ctx.globalAlpha = Math.min(1, k * 1.8) * 0.75;
+      stamp(ctx, blastSprite(p < 0.55 ? fx.color : '#9a9aa4', Math.round(r / 3), true), fx.x, fx.y, 3);
+      const seed = (fx.x * 13 + fx.y * 7) | 0;
+      for (let i = 0; i < 8; i++) {
+        const a = i * 0.785 + (seed % 7);
+        const d = r * (0.7 + p * 0.7) + ((seed >> i) & 7);
+        const sz = p < 0.5 ? 4 : 3;
+        ctx.fillStyle = i % 2 ? '#ffd23f' : fx.color;
+        ctx.fillRect(Math.round(fx.x + Math.cos(a) * d), Math.round(fx.y + Math.sin(a) * d - p * 6), sz, sz);
+      }
+    } else if (fx.kind === 'ring') {
+      const r = fx.r * (1.1 - k * 0.4);
+      stamp(ctx, blastSprite(fx.color, Math.round(r / 3), true), fx.x, fx.y, 3);
+    } else if (fx.kind === 'drop') {
+      // Shadow of a falling summon, growing until it lands.
+      const p = 1 - k;
+      ctx.globalAlpha = 0.25 + p * 0.35;
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.ellipse(fx.x, fx.y, fx.r * (0.3 + p * 0.7), fx.r * (0.15 + p * 0.35), 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (fx.kind === 'toad') {
+      const img = toadSprite();
+      const p = 1 - k;
+      ctx.globalAlpha = Math.min(1, k * 3) * 0.8;
+      stamp(ctx, img, fx.x, fx.y - fx.r * 0.2 - (p < 0.15 ? (0.15 - p) * 300 : 0), (Math.min(fx.r, 110) * 0.95) / img.width);
+    } else if (fx.kind === 'shadow' && fx.pts) {
+      // Shikamaru's shadow: a thick dark band snaking along the ground.
+      ctx.globalAlpha = Math.min(1, k * 2) * 0.85;
+      ctx.strokeStyle = fx.color;
+      ctx.lineCap = 'round';
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      const [x1, y1, x2, y2] = fx.pts;
+      ctx.moveTo(x1, y1);
+      ctx.quadraticCurveTo((x1 + x2) / 2 + (y2 - y1) * 0.15, (y1 + y2) / 2 - (x2 - x1) * 0.15, x2, y2);
+      ctx.stroke();
+      ctx.lineCap = 'butt';
+    } else if (fx.kind === 'bolt' && fx.pts) {
+      ctx.strokeStyle = fx.color;
+      ctx.lineWidth = fx.r;
+      ctx.shadowColor = '#7fd0ff';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.moveTo(fx.pts[0], fx.pts[1]);
+      for (let i = 2; i < fx.pts.length; i += 2) ctx.lineTo(fx.pts[i], fx.pts[i + 1]);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    } else if (fx.kind === 'puff') {
+      // Pixel smoke: chunks drift outwards and up while shrinking.
+      const p = 1 - k;
+      for (let i = 0; i < 7; i++) {
+        const a = (i / 7) * Math.PI * 2 + 0.4;
+        const d = fx.r * (0.3 + p * 0.8);
+        const sz = Math.max(2, Math.round((fx.r * 0.5 * k + 2) / 2) * 2);
+        ctx.fillStyle = i % 2 ? fx.color : '#9aa0a8';
+        ctx.fillRect(Math.round(fx.x + Math.cos(a) * d - sz / 2), Math.round(fx.y + Math.sin(a) * d * 0.8 - sz / 2 - p * 10), sz, sz);
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
 }
 
 // ---------------- frame ----------------
@@ -286,6 +438,14 @@ function drawHero(ctx: CanvasRenderingContext2D, h: HeroView, t: number, isLocal
     ctx.fillText(h.name, h.x, h.y - 28);
   }
   for (const o of h.orbs) stamp(ctx, sandOrbSprite(), o.x, o.y, (o.r * 2.4) / 7);
+  if (h.burning) {
+    for (let i = 0; i < 3; i++) {
+      const img = flameSprite('fire', Math.floor(t * 14 + i * 2));
+      ctx.globalAlpha = 0.85;
+      ctx.drawImage(img, h.x - 10 + i * 7, h.y - 4 - (i % 2) * 8, img.width * 1.1, img.height * 1.1);
+    }
+    ctx.globalAlpha = 1;
+  }
 }
 
 export function render(ctx: CanvasRenderingContext2D, g: SceneView, view: View, input: Input): void {
@@ -313,6 +473,9 @@ export function render(ctx: CanvasRenderingContext2D, g: SceneView, view: View, 
 
   for (const h of g.hazards) if (h.kind === 'zone') drawHazard(ctx, h, g.t);
   for (const f of g.fields) drawField(ctx, f, g.t);
+  // Explosions, rings and summons happen on the ground: drawn under the characters so
+  // big jutsus never hide what is going on.
+  drawEffects(ctx, g.effects, true);
   for (const pk of g.pickups) drawPickup(ctx, pk, g.t);
 
   for (const h of g.heroes) {
@@ -346,77 +509,7 @@ export function render(ctx: CanvasRenderingContext2D, g: SceneView, view: View, 
   for (const pr of g.projectiles) drawProjectile(ctx, pr, g.t);
   for (const h of g.hazards) if (h.kind === 'bullet') drawHazard(ctx, h, g.t);
 
-  for (const fx of g.effects) {
-    const k = fx.life / fx.max;
-    ctx.globalAlpha = Math.max(0, k);
-    if (fx.kind === 'boom') {
-      // Pixel blast in phases: white flash, coloured fire ring, grey smoke, with embers.
-      const p = 1 - k;
-      const r = fx.r * (0.55 + p * 0.55);
-      ctx.globalAlpha = Math.min(1, k * 1.8) * 0.85;
-      if (p < 0.3) stamp(ctx, blastSprite('#fff4c2', Math.round((r * 0.7) / 3), false), fx.x, fx.y, 3);
-      ctx.globalAlpha *= 0.45;
-      stamp(ctx, blastSprite(p < 0.55 ? fx.color : '#7a7a84', Math.round((r * 0.85) / 3), false), fx.x, fx.y, 3);
-      ctx.globalAlpha = Math.min(1, k * 1.8) * 0.9;
-      stamp(ctx, blastSprite(p < 0.55 ? fx.color : '#9a9aa4', Math.round(r / 3), true), fx.x, fx.y, 3);
-      const seed = (fx.x * 13 + fx.y * 7) | 0;
-      for (let i = 0; i < 8; i++) {
-        const a = i * 0.785 + (seed % 7);
-        const d = r * (0.7 + p * 0.7) + ((seed >> i) & 7);
-        const sz = p < 0.5 ? 4 : 3;
-        ctx.fillStyle = i % 2 ? '#ffd23f' : fx.color;
-        ctx.fillRect(Math.round(fx.x + Math.cos(a) * d), Math.round(fx.y + Math.sin(a) * d - p * 6), sz, sz);
-      }
-    } else if (fx.kind === 'ring') {
-      const r = fx.r * (1.1 - k * 0.4);
-      stamp(ctx, blastSprite(fx.color, Math.round(r / 3), true), fx.x, fx.y, 3);
-    } else if (fx.kind === 'drop') {
-      // Shadow of a falling summon, growing until it lands.
-      const p = 1 - k;
-      ctx.globalAlpha = 0.25 + p * 0.35;
-      ctx.fillStyle = '#000';
-      ctx.beginPath();
-      ctx.ellipse(fx.x, fx.y, fx.r * (0.3 + p * 0.7), fx.r * (0.15 + p * 0.35), 0, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (fx.kind === 'toad') {
-      const img = toadSprite();
-      const p = 1 - k;
-      ctx.globalAlpha = Math.min(1, k * 3);
-      stamp(ctx, img, fx.x, fx.y - fx.r * 0.25 - (p < 0.15 ? (0.15 - p) * 300 : 0), (fx.r * 1.5) / img.width);
-    } else if (fx.kind === 'shadow' && fx.pts) {
-      // Shikamaru's shadow: a thick dark band snaking along the ground.
-      ctx.globalAlpha = Math.min(1, k * 2) * 0.85;
-      ctx.strokeStyle = fx.color;
-      ctx.lineCap = 'round';
-      ctx.lineWidth = 6;
-      ctx.beginPath();
-      const [x1, y1, x2, y2] = fx.pts;
-      ctx.moveTo(x1, y1);
-      ctx.quadraticCurveTo((x1 + x2) / 2 + (y2 - y1) * 0.15, (y1 + y2) / 2 - (x2 - x1) * 0.15, x2, y2);
-      ctx.stroke();
-      ctx.lineCap = 'butt';
-    } else if (fx.kind === 'bolt' && fx.pts) {
-      ctx.strokeStyle = fx.color;
-      ctx.lineWidth = fx.r;
-      ctx.shadowColor = '#7fd0ff';
-      ctx.shadowBlur = 8;
-      ctx.beginPath();
-      ctx.moveTo(fx.pts[0], fx.pts[1]);
-      for (let i = 2; i < fx.pts.length; i += 2) ctx.lineTo(fx.pts[i], fx.pts[i + 1]);
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-    } else if (fx.kind === 'puff') {
-      // Pixel smoke: chunks drift outwards and up while shrinking.
-      const p = 1 - k;
-      for (let i = 0; i < 7; i++) {
-        const a = (i / 7) * Math.PI * 2 + 0.4;
-        const d = fx.r * (0.3 + p * 0.8);
-        const sz = Math.max(2, Math.round((fx.r * 0.5 * k + 2) / 2) * 2);
-        ctx.fillStyle = i % 2 ? fx.color : '#9aa0a8';
-        ctx.fillRect(Math.round(fx.x + Math.cos(a) * d - sz / 2), Math.round(fx.y + Math.sin(a) * d * 0.8 - sz / 2 - p * 10), sz, sz);
-      }
-    }
-  }
+  drawEffects(ctx, g.effects, false);
   ctx.globalAlpha = 1;
 
   ctx.textAlign = 'center';
@@ -545,9 +638,58 @@ function drawEdgeArrows(ctx: CanvasRenderingContext2D, g: SceneView, view: View)
   const hh = view.h / 2;
   const targets: { x: number; y: number; color: string }[] = [];
   for (const e of g.enemies) if (e.boss) targets.push({ x: e.x, y: e.y, color: '#ff3b3b' });
-  for (const pk of g.pickups) {
-    if (pk.kind === 'biju') targets.push({ x: pk.x, y: pk.y, color: '#ff8a3c' });
-    else if (pk.kind === 'tenten') targets.push({ x: pk.x, y: pk.y, color: '#5cc96b' });
+  // Bijū and Tenten get a big badge at the screen edge (only the nearest of each).
+  const nearest = (kind: string) =>
+    g.pickups.filter((pk) => pk.kind === kind).sort((a, b) => (a.x - p.x) ** 2 + (a.y - p.y) ** 2 - ((b.x - p.x) ** 2 + (b.y - p.y) ** 2))[0];
+  for (const pk of [nearest('biju'), nearest('tenten')]) {
+    if (!pk) continue;
+    const sx = (pk.x - p.x) * view.zoom;
+    const sy = (pk.y - p.y) * view.zoom;
+    if (Math.abs(sx) < hw - 30 && Math.abs(sy) < hh - 30) continue;
+    const a = Math.atan2(sy, sx);
+    const inset = 40;
+    const k = Math.min((hw - inset) / Math.abs(Math.cos(a) || 1e-6), (hh - inset - 30) / Math.abs(Math.sin(a) || 1e-6));
+    const bx = hw + Math.cos(a) * k;
+    const by = hh + Math.sin(a) * k;
+    const isBiju = pk.kind === 'biju';
+    const color = isBiju ? '#ff8a3c' : '#5cc96b';
+    const pulse = 1 + Math.sin(g.t * 6) * 0.08;
+    const size = 30 * pulse;
+    // Arrow outside the badge.
+    ctx.save();
+    ctx.translate(bx + Math.cos(a) * (size / 2 + 8), by + Math.sin(a) * (size / 2 + 8));
+    ctx.rotate(a);
+    ctx.fillStyle = '#160f1c';
+    ctx.beginPath();
+    ctx.moveTo(11, 0);
+    ctx.lineTo(-5, -9);
+    ctx.lineTo(-5, 9);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(8, 0);
+    ctx.lineTo(-3, -6);
+    ctx.lineTo(-3, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    pixelPanel(ctx, bx - size / 2, by - size / 2, size, size, isBiju ? 'rgba(90,40,10,0.9)' : 'rgba(20,60,30,0.9)');
+    ctx.fillStyle = color;
+    ctx.fillRect(Math.round(bx - size / 2), Math.round(by - size / 2), Math.round(size), 2);
+    ctx.imageSmoothingEnabled = false;
+    const icon = isBiju ? bijuSprite(pk.value) : ITEM_SPRITES.stall();
+    const ipx = (size - 6) / Math.max(icon.width, icon.height);
+    ctx.drawImage(icon, bx - (icon.width * ipx) / 2, by - (icon.height * ipx) / 2, icon.width * ipx, icon.height * ipx);
+    const dist = Math.round(Math.hypot(pk.x - p.x, pk.y - p.y) / 10);
+    ctx.font = `700 10px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#160f1c';
+    const label = isBiju ? `${dist} m` : `Tenten ${dist} m`;
+    ctx.strokeText(label, bx, by + size / 2 + 12);
+    ctx.fillStyle = color;
+    ctx.fillText(label, bx, by + size / 2 + 12);
   }
   g.heroes.forEach((h, i) => {
     if (i !== g.localIndex) targets.push({ x: h.x, y: h.y, color: h.downed ? '#ffffff' : '#4fb3ff' });
@@ -580,6 +722,20 @@ function drawHud(ctx: CanvasRenderingContext2D, g: SceneView, view: View, input:
   const H = view.h;
   const me = g.heroes[g.localIndex];
 
+  if (g.dimension) {
+    if (g.dimension === 'arena') {
+      // Sandstorm: you only see what's close.
+      const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.18, W / 2, H / 2, Math.max(W, H) * 0.62);
+      vg.addColorStop(0, 'rgba(90,60,20,0)');
+      vg.addColorStop(1, 'rgba(90,60,20,0.92)');
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, W, H);
+    } else {
+      const tints: Record<string, string> = { lava: `rgba(255,60,0,${0.07 + Math.sin(g.t * 2) * 0.03})`, hielo: 'rgba(160,210,255,0.08)', gravedad: 'rgba(80,40,140,0.16)' };
+      ctx.fillStyle = tints[g.dimension] ?? 'rgba(0,0,0,0)';
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
   if (g.tint) {
     const k = g.tint.life / g.tint.max;
     ctx.fillStyle = `rgba(${g.tint.color},${0.35 * Math.min(1, k * 2)})`;

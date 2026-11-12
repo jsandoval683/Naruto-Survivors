@@ -256,6 +256,7 @@ export class NetGame {
       banner: s.bn,
       tint: s.tn,
       nextBoss: s.nb,
+      dimension: s.dim,
     };
   }
 }

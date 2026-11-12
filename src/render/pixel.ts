@@ -301,6 +301,15 @@ function buildCharacter(L: Look, frame: WalkFrame, plate: string | null): Grid {
     case 'kabuto':
       rect(g, bx0, 19, bx1, 19, '#6b3fa0');
       break;
+    case 'kaguya':
+      rect(g, bx0, 20, bx1, 21, '#b49cff');
+      set(g, 10, 16, '#e01b1b');
+      break;
+    case 'obito':
+    case 'madara_rikudo':
+      // Six Paths robe with magatama.
+      for (const x of [7, 10, 12]) set(g, x, 15, '#1a1a1a');
+      break;
     case 'sasuke':
       rect(g, bx0, 19, bx1, 19, '#6b3fa0');
       break;
@@ -353,6 +362,11 @@ function buildCharacter(L: Look, frame: WalkFrame, plate: string | null): Grid {
   if (L.extra === 'brows') {
     rect(g, 8, 9, 9, 9, '#111');
     rect(g, 12, 9, 13, 9, '#111');
+  }
+  if (L.extra === 'horns') {
+    rect(g, 7, 2, 7, 4, '#e8e4f0');
+    rect(g, 13, 2, 13, 4, '#e8e4f0');
+    set(g, 10, 7, '#b49cff');
   }
   if (L.extra === 'gills') {
     const c = shade(skin, 0.6);
@@ -747,3 +761,64 @@ Object.assign(ICON_ROWS, {
   hiraishin: () =>
     iconFromRows(['..........yy', '.........yky', '........yky.', '...y...yky..', '..yky.yky...', '.ykkykkky...', '..yky.yy....', '.ohho.......', 'ohhho.......', 'oho.........', 'oo..........'], { y: '#ffe14d', k: '#ffffff', o: '#20232a', h: '#3a3f47' }),
 });
+
+// ---------------- fire ----------------
+
+export const FIRE_PALETTES = {
+  fire: ['#7a1a08', '#d8481a', '#ff9a2a', '#fff0b0'],
+  black: ['#08040c', '#2a0a3a', '#6b3fa0', '#c9a0ff'],
+} as const;
+
+/** One animated flame tongue (8×14), 4 frames, coloured from tip to core. */
+export function flameSprite(kind: keyof typeof FIRE_PALETTES, frame: number): HTMLCanvasElement {
+  return cached(`flame:${kind}:${frame % 4}`, () => {
+    const pal = FIRE_PALETTES[kind];
+    const profile = [5, 9, 12, 14, 13, 10, 7, 4];
+    const g = grid(8, 14);
+    const r = (n: number) => {
+      const v = Math.sin((frame % 4) * 12.9898 + n * 78.233) * 43758.5453;
+      return v - Math.floor(v);
+    };
+    profile.forEach((base, x) => {
+      const h = Math.max(2, Math.min(14, base + Math.round((r(x) - 0.5) * 4)));
+      const top = 14 - h;
+      for (let y = top; y < 14; y++) {
+        const rel = (y - top) / h;
+        const dx = Math.abs(x - 3.5);
+        const c = rel < 0.15 ? pal[0] : dx < 1.6 && rel > 0.45 ? pal[3] : dx < 2.6 && rel > 0.25 ? pal[2] : pal[1];
+        set(g, x, y, c);
+      }
+    });
+    return toCanvas(g);
+  });
+}
+
+// ---------------- obstacles ----------------
+
+/** Big shaded boulder with cracks, tinted per scene. */
+export function boulderSprite(color: string, glow: string | null = null): HTMLCanvasElement {
+  return cached(`boulder:${color}:${glow}`, () => {
+    const g = grid(18, 14);
+    for (let y = 0; y < 14; y++) {
+      for (let x = 0; x < 18; x++) {
+        const dx = (x - 8.5) / 8.6;
+        const dy = (y - 7.5) / 6.6;
+        if (dx * dx + dy * dy <= 1) set(g, x, y, y < 5 ? shade(color, 1.15) : y > 10 ? shade(color, 0.8) : color);
+      }
+    }
+    const crack = glow ?? shade(color, 0.6);
+    for (const [x, y] of [[6, 4], [7, 5], [7, 6], [8, 7], [12, 6], [13, 7], [12, 8], [4, 9], [5, 9]]) set(g, x, y, crack);
+    set(g, 5, 3, shade(color, 1.4));
+    set(g, 6, 2, shade(color, 1.4));
+    return toCanvas(outline(shadeEdges(g)));
+  });
+}
+
+export function crystalSprite(): HTMLCanvasElement {
+  return cached('crystal', () =>
+    fromRows(
+      ['....oo......', '...owlo.....', '...owlo..oo.', '..owllo.owlo', '..owllo.owlo', '.owlllooollo', '.owlllolllo.', 'owllllollloo', 'owllllolllo.', 'oddddddddo..', '.oooooooo...'],
+      { o: '#1d4f7a', w: '#f4fbff', l: '#9fd8ff', d: '#4f9ad0' },
+    ),
+  );
+}
